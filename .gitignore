@@ -1,0 +1,6 @@
+# Agent private memory (per-session, not project source)
+.workbuddy/
+
+# OS noise
+Thumbs.db
+Desktop.ini

@@ -1,0 +1,1678 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="system">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>TXT 阅读器 · 项目 · 章节 · 翻页</title>
+<style>
+  /* ============ 主题变量 ============ */
+  :root {
+    --radius: 14px;
+    --accent: #6366f1;
+    --accent2: #8b5cf6;
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  html[data-theme="light"] {
+    /* 护眼亮色：暖纸感 · 减蓝光 · 降对比
+       依据：羊皮纸/暖光(4000K) 眼科研究（避免纯白全光谱刺激）+ Obsidian EyesCare 浅色配色 */
+    --bg: #f6f1e7;
+    --bg-grad: radial-gradient(1200px 600px at 80% -10%, #f1e7d2 0%, transparent 60%),
+               radial-gradient(900px 500px at -10% 110%, #efe6d4 0%, transparent 55%);
+    --surface: rgba(255,253,247,0.72);
+    --surface-solid: #fbf8f1;
+    --text: #3d3529;
+    --muted: #8c8473;
+    --border: rgba(61,53,41,0.10);
+    --glow: rgba(193,120,23,0.16);
+    --row-hover: rgba(193,120,23,0.06);
+    --accent: #c17817;
+    --accent2: #d99a4e;
+  }
+  html[data-theme="dark"] {
+    /* 护眼暗色：非纯黑（深紫灰 #1c1a24）· 柔对比 · 暖白字
+       依据：规避纯黑 #000 强反差（One Dark/VS Code #1e1e1e 护眼原则）+ Obsidian EyesCare 深紫 + 月光暖白字 #e8e3d6 降低刺眼 */
+    --bg: #1c1a24;
+    --bg-grad: radial-gradient(1200px 600px at 80% -10%, #262038 0%, transparent 60%),
+               radial-gradient(900px 500px at -10% 110%, #1a2030 0%, transparent 55%);
+    --surface: rgba(40,36,52,0.62);
+    --surface-solid: #221f2e;
+    --text: #e8e3d6;
+    --muted: #9a93a8;
+    --border: rgba(255,255,255,0.08);
+    --glow: rgba(127,179,211,0.20);
+    --row-hover: rgba(127,179,211,0.08);
+    --accent: #7fb3d3;
+    --accent2: #9b8fd6;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: "Segoe UI", system-ui, -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif;
+    background: var(--bg);
+    background-image: var(--bg-grad);
+    background-attachment: fixed;
+    color: var(--text);
+    transition: background-color .4s var(--ease), color .4s var(--ease);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .app { height: 100vh; display: flex; flex-direction: column; padding: 16px; gap: 14px; }
+
+  /* ============ 顶栏 ============ */
+  .topbar {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 10px 14px;
+    padding: 12px 16px;
+    background: var(--surface);
+    backdrop-filter: blur(22px) saturate(180%);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 10px 40px -20px var(--glow);
+    transition: background-color .4s var(--ease), border-color .4s var(--ease);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; letter-spacing: .2px; margin-right: auto; }
+  .brand .dot { width: 12px; height: 12px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent2)); box-shadow: 0 0 14px var(--glow); }
+  .brand small { color: var(--muted); font-weight: 500; font-size: 12px; }
+  .ctrl { display: flex; align-items: center; gap: 8px; }
+  .ctrl label { color: var(--muted); font-size: 13px; }
+
+  button, select {
+    font-family: inherit; color: var(--text); background: var(--surface-solid);
+    border: 1px solid var(--border); border-radius: 10px; padding: 9px 14px;
+    font-size: 13px; cursor: pointer;
+    transition: transform .25s var(--ease), box-shadow .25s var(--ease), background-color .25s var(--ease), border-color .25s var(--ease);
+  }
+  button:hover, select:hover { transform: translateY(-2px); box-shadow: 0 8px 22px -12px var(--glow); }
+  button:active { transform: translateY(0) scale(.97); }
+
+  .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border: none; font-weight: 600; box-shadow: 0 8px 24px -10px var(--glow); }
+  .btn-primary:hover { box-shadow: 0 12px 30px -10px var(--glow); }
+  .btn-ghost { background: var(--surface-solid); }
+
+  select { padding-right: 28px; appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+    background-position: calc(100% - 16px) 52%, calc(100% - 11px) 52%; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; }
+
+  .seg { display: inline-flex; background: var(--surface-solid); border: 1px solid var(--border); border-radius: 10px; padding: 3px; }
+  .seg button { border: none; background: transparent; padding: 6px 11px; border-radius: 8px; box-shadow: none; }
+  .seg button.active { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; box-shadow: 0 6px 16px -10px var(--glow); }
+  .seg button:hover { transform: none; box-shadow: none; }
+
+  /* ============ 主体布局 ============ */
+  .body { flex: 1 1 auto; min-height: 0; display: flex; gap: 14px; }
+
+  /* 侧栏（文件 / 章节） */
+  .sidebar {
+    flex: 0 0 276px; width: 276px; display: flex; flex-direction: column; gap: 12px;
+    min-height: 0; overflow: hidden;
+    transition: width .35s var(--ease), opacity .3s var(--ease), margin .35s var(--ease), flex-basis .35s var(--ease);
+  }
+  .app.sidebar-collapsed .sidebar { width: 0; flex-basis: 0; opacity: 0; margin-left: -14px; }
+
+  .panel {
+    display: flex; flex-direction: column; min-height: 0; flex: 1 1 0;
+    background: var(--surface); backdrop-filter: blur(18px) saturate(160%);
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden;
+    box-shadow: 0 14px 44px -28px var(--glow);
+    transition: background-color .4s var(--ease), border-color .4s var(--ease);
+  }
+  .panel-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); font-weight: 600; font-size: 13px; }
+  .panel-head .chev { padding: 2px 7px; font-size: 12px; line-height: 1; }
+  .panel-head .count { margin-left: auto; color: var(--muted); font-weight: 500; font-size: 12px; }
+  .panel-body { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .panel.collapsed .panel-body { display: none; }
+  .panel.collapsed .chev { transform: rotate(-90deg); }
+
+  .search-wrap { margin: 8px; display: flex; align-items: center; gap: 6px; }
+  .search-wrap .search { margin: 0; flex: 1 1 auto; min-width: 0; }
+  .search { margin: 8px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-solid); color: var(--text); font-size: 13px; }
+  .search:focus { outline: 2px solid var(--glow); border-color: transparent; }
+  .search-btn { flex: 0 0 auto; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--accent); background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; font-weight: 600; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; transition: transform .15s var(--ease), box-shadow .15s var(--ease); }
+  .search-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px -8px var(--accent); }
+  .search-btn:active { transform: translateY(0); }
+  .search-btn svg { width: 14px; height: 14px; flex: 0 0 auto; }
+  @media (max-width: 640px) {
+    .search-wrap { margin: 6px; gap: 4px; }
+    .search-btn { padding: 8px; }
+    .search-btn .btn-text { display: none; }
+    .search-btn svg { width: 16px; height: 16px; }
+  }
+  .list { flex: 1 1 0; min-height: 0; overflow: auto; padding: 4px 6px 8px; }
+  .list::-webkit-scrollbar { width: 10px; }
+  .list::-webkit-scrollbar-thumb { background: var(--glow); border-radius: 10px; border: 3px solid transparent; background-clip: content-box; }
+  .list-item { padding: 8px 10px; border-radius: 8px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; transition: background-color .15s, transform .15s var(--ease); }
+  .list-item:hover { background: var(--row-hover); transform: translateX(2px); }
+  .list-item.active { background: linear-gradient(135deg, rgba(99,102,241,.20), rgba(139,92,246,.20)); }
+  .list-item.active-chap { background: linear-gradient(135deg, rgba(99,102,241,.16), rgba(139,92,246,.16)); box-shadow: inset 3px 0 0 var(--accent); }
+  .li-name { font-size: 13px; font-weight: 600; }
+  .li-path { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .empty-list { padding: 18px 12px; color: var(--muted); font-size: 12px; text-align: center; line-height: 1.6; }
+
+  /* 正文内当前匹配高亮 */
+  .tx mark.kw, mark.kw {
+    background: linear-gradient(135deg, #fde047, #fbbf24);
+    color: #1c1d29; border-radius: 4px; padding: 0 2px;
+    box-shadow: 0 1px 0 rgba(0,0,0,.12); font-weight: 600;
+  }
+  /* 匹配序号状态 */
+  .match-info {
+    margin: 2px 10px 6px; font-size: 12px; color: var(--accent);
+    font-weight: 600; font-variant-numeric: tabular-nums;
+    display: flex; align-items: center; gap: 6px; user-select: none;
+  }
+  .match-info .dot { width: 7px; height: 7px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent2)); box-shadow: 0 0 8px var(--glow); }
+
+  /* 阅读列 */
+  .reader-col { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+  .reader-wrap {
+    flex: 1 1 auto; min-height: 0; position: relative;
+    background: var(--surface); backdrop-filter: blur(18px) saturate(160%);
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: 0 18px 50px -28px var(--glow); overflow: hidden;
+    transition: background-color .4s var(--ease), border-color .4s var(--ease);
+  }
+  .viewport { position: relative; height: 100%; width: 100%; overflow: auto; scroll-behavior: auto; }
+  .viewport::-webkit-scrollbar { width: 12px; height: 12px; }
+  .viewport::-webkit-scrollbar-thumb { background: var(--glow); border-radius: 10px; border: 3px solid transparent; background-clip: content-box; }
+  .viewport::-webkit-scrollbar-track { background: transparent; }
+
+  #spacer { position: relative; width: 100%; }
+  #content { position: absolute; top: 0; left: 0; will-change: transform; contain: layout style; transition: opacity .28s var(--ease); }
+  .row { display: flex; align-items: flex-start; box-sizing: border-box; transition: background-color .12s linear; }
+  .row:hover { background: var(--row-hover); }
+  .ln { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: flex-end; text-align: right; padding: 0 14px 0 16px; color: var(--muted); user-select: none; border-right: 1px solid var(--border); font-variant-numeric: tabular-nums; white-space: nowrap; line-height: var(--line-height, 1.8); height: 100%; font-size: var(--font-size, 14px); }
+  .tx { flex: 1 1 auto; min-height: 0; height: 100%; padding: 0 16px; white-space: pre-wrap; word-break: break-word; line-height: var(--line-height, 1.8); overflow: hidden; font-size: var(--font-size, 14px); }
+  body.nowrap .tx { white-space: pre; }
+
+  .empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 14px; text-align: center; color: var(--muted); pointer-events: none; padding: 24px; overflow: auto; }
+  .empty   .help-card {
+    max-width: 820px; width: 100%;
+    margin: 16px 0;
+    background: var(--surface);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 20px 60px -28px var(--glow);
+    padding: 24px 28px;
+    text-align: left;
+    color: var(--text);
+    pointer-events: auto;
+    transition: background-color .4s var(--ease), border-color .4s var(--ease);
+  }
+  .help-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+  .help-icon { width: 48px; height: 48px; border-radius: 14px; display: grid; place-items: center; font-size: 24px; background: var(--surface-solid); border: 1px solid var(--border); box-shadow: 0 10px 30px -16px var(--glow); flex: 0 0 auto; }
+  .help-title { font-size: 22px; font-weight: 700; letter-spacing: .3px; color: var(--text); }
+  .help-version { margin-left: auto; font-size: 12px; color: var(--muted); font-weight: 500; background: var(--surface-solid); border: 1px solid var(--border); padding: 4px 10px; border-radius: 999px; }
+  .help-section { margin-bottom: 16px; }
+  .help-section h3 { font-size: 14px; font-weight: 700; color: var(--accent); margin: 0 0 8px 0; letter-spacing: .5px; display: flex; align-items: center; gap: 8px; }
+  .help-section p, .help-section li { font-size: 13px; line-height: 1.7; color: var(--text); margin: 0; }
+  .help-section ul { margin: 0; padding-left: 18px; }
+  .help-section li { margin-bottom: 3px; }
+  .help-kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; padding: 2px 7px; font-size: 11px; font-weight: 600; font-family: inherit; background: var(--surface-solid); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 2px 0 var(--border); color: var(--text); margin: 0 1px; }
+  .help-grid { display: grid; grid-template-columns: repeat(2, auto 1fr); gap: 8px 20px; font-size: 13px; line-height: 1.6; }
+  .help-grid .key { color: var(--muted); text-align: right; white-space: nowrap; display: flex; align-items: center; gap: 4px; }
+  .help-grid .act { color: var(--text); display: flex; align-items: center; }
+  .help-tip { margin-top: 14px; padding: 10px 14px; background: var(--surface-solid); border: 1px solid var(--border); border-radius: 10px; font-size: 12px; line-height: 1.7; color: var(--muted); }
+  .empty.hidden { display: none; }
+
+  /* 阅读进度恢复提示 toast */
+  .toast {
+    position: fixed; left: 50%; bottom: 24px;
+    transform: translateX(-50%) translateY(16px);
+    background: var(--surface-solid);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 9px 18px;
+    font-size: 13px; font-weight: 500;
+    box-shadow: 0 12px 36px -16px var(--glow);
+    backdrop-filter: blur(16px) saturate(160%);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+    opacity: 0; pointer-events: none;
+    transition: opacity .35s var(--ease), transform .35s var(--ease);
+    z-index: 50;
+    white-space: nowrap;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  body.reading-mode .toast { z-index: 60; }
+  @media (max-width: 640px) {
+    .empty { padding: 14px; }
+    .help-card { padding: 18px 16px; }
+    .help-title { font-size: 20px; }
+    .help-grid { grid-template-columns: auto 1fr; gap: 6px 14px; }
+    .help-grid .key { text-align: left; color: var(--text); font-weight: 600; }
+  }
+
+  .panel-head .panel-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
+  .panel-head .panel-actions button { padding: 4px 8px; font-size: 12px; border-radius: 7px; background: transparent; border: none; color: var(--muted); cursor: pointer; }
+  .panel-head .panel-actions button:hover { background: var(--row-hover); color: var(--text); }
+
+  /* 翻页栏 */
+  .pagebar {
+    display: flex; align-items: center; gap: 10px; padding: 8px 14px;
+    font-size: 13px; background: var(--surface); backdrop-filter: blur(18px) saturate(160%);
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    transition: background-color .4s var(--ease), border-color .4s var(--ease);
+  }
+  .pagebar .spacer { flex: 1 1 auto; }
+  #pageInfo { font-variant-numeric: tabular-nums; min-width: 70px; text-align: center; font-weight: 600; }
+  .btn-icon { padding: 8px 12px; font-weight: 600; }
+  .btn-icon.active { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border: none; }
+  .btn-icon:disabled { opacity: .4; cursor: not-allowed; filter: grayscale(.4); }
+
+  .speed-box { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+  .speed-box label { color: var(--muted); }
+  .speed-box input { width: 60px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface-solid); color: var(--text); font-size: 13px; font-family: inherit; text-align: center; }
+  .speed-box input:focus { outline: 2px solid var(--glow); border-color: transparent; }
+  .speed-box #speedVal { font-variant-numeric: tabular-nums; min-width: 40px; font-weight: 600; color: var(--text); }
+
+  /* ============ 状态栏 ============ */
+  .statusbar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 10px 16px;
+    font-size: 12.5px; color: var(--muted);
+    background: var(--surface); backdrop-filter: blur(18px) saturate(160%);
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    transition: background-color .4s var(--ease), border-color .4s var(--ease);
+  }
+  .statusbar .item { display: flex; align-items: center; gap: 6px; }
+  .statusbar .item b { color: var(--text); font-weight: 600; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-weight: 600; font-size: 12px; background: var(--surface-solid); border: 1px solid var(--border); color: var(--text); }
+  .chip .pulse { width: 8px; height: 8px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent2)); box-shadow: 0 0 10px var(--glow); }
+  .statusbar .spacer { flex: 1 1 auto; }
+
+  input[type=file] { display: none; }
+
+  /* 窄屏：侧栏浮层 */
+  @media (max-width: 860px) {
+    .sidebar { position: fixed; left: 16px; top: 86px; bottom: 86px; z-index: 40;
+      box-shadow: 0 24px 70px -20px rgba(0,0,0,.55); background: var(--bg); }
+    .app.sidebar-collapsed .sidebar { left: -340px; margin-left: 0; }
+  }
+
+  /* ============ 纯净阅读模式 ============ */
+  .read-bar {
+    position: fixed; top: 14px; left: 50%; transform: translateX(-50%) translateY(-14px);
+    z-index: 60; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center;
+    padding: 10px 16px; max-width: calc(100vw - 24px);
+    background: var(--surface); backdrop-filter: blur(22px) saturate(180%);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+    border: 1px solid var(--border); border-radius: 999px;
+    box-shadow: 0 16px 50px -20px rgba(0,0,0,.55);
+    opacity: 0; pointer-events: none; visibility: hidden;
+    transition: opacity .3s var(--ease), transform .3s var(--ease), visibility .3s;
+  }
+  .read-bar[hidden] { display: none; }
+  body.reading-mode .read-bar { opacity: 1; pointer-events: auto; visibility: visible; transform: translateX(-50%) translateY(0); }
+  .read-bar .grp { display: inline-flex; align-items: center; gap: 6px; }
+  .read-bar .sep { width: 1px; height: 22px; background: var(--border); }
+  .read-bar label { color: var(--muted); font-size: 12px; }
+  .read-bar button { padding: 6px 11px; border-radius: 9px; font-size: 13px; }
+  .read-bar .swatches { display: inline-flex; gap: 7px; align-items: center; }
+  .read-bar .swatch { width: 22px; height: 22px; border-radius: 50%; padding: 0; border: 2px solid transparent; cursor: pointer; box-shadow: 0 0 0 1px var(--border); transition: transform .2s var(--ease), border-color .2s var(--ease); }
+  .read-bar .swatch:hover { transform: scale(1.12); }
+  .read-bar .swatch.active { border-color: var(--accent); transform: scale(1.18); box-shadow: 0 0 0 1px var(--accent); }
+  .read-bar .exit { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border: none; font-weight: 600; }
+  .read-bar .exit:hover { box-shadow: 0 10px 26px -10px var(--glow); }
+
+  /* 设置按钮：提升辨识度 */
+  .read-bar .settings-btn { display: inline-flex; align-items: center; gap: 4px; }
+  .read-bar .settings-btn .settings-text { display: inline; }
+  .read-bar .settings-btn .settings-icon { display: none; }
+  .read-bar .settings-btn {
+    border: 1px solid var(--accent);
+    background: linear-gradient(135deg, rgba(99,102,241,0.12), rgba(139,92,246,0.08));
+    color: var(--accent);
+    font-weight: 600;
+    box-shadow: 0 0 0 1px rgba(99,102,241,0.06);
+  }
+  .read-bar .settings-btn:hover {
+    background: linear-gradient(135deg, rgba(99,102,241,0.22), rgba(139,92,246,0.14));
+    box-shadow: 0 8px 22px -10px var(--glow);
+  }
+
+  /* 纯净阅读控制条：紧凑 / 收起状态 */
+  body.reading-mode .read-bar.compact {
+    left: auto; right: 14px;
+    transform: none;
+    justify-content: flex-end;
+    padding: 8px 10px;
+    gap: 8px;
+    max-width: none;
+  }
+  body.reading-mode .read-bar.compact .grp:not(.actions),
+  body.reading-mode .read-bar.compact .sep { display: none; }
+  body.reading-mode .read-bar.compact .grp.actions { gap: 8px; }
+  body.reading-mode .read-bar.compact .actions button { padding: 6px 12px; }
+  body.reading-mode .read-bar.compact .settings-btn .settings-text { display: none; }
+  body.reading-mode .read-bar.compact .settings-btn .settings-icon { display: inline; }
+
+  /* 净化：隐藏非必要 UI，仅留正文核心内容 */
+  body.reading-mode .topbar,
+  body.reading-mode .sidebar,
+  body.reading-mode .pagebar,
+  body.reading-mode .statusbar { display: none !important; }
+  body.reading-mode .app { padding: 0; gap: 0; height: 100vh; }
+  body.reading-mode .body { gap: 0; }
+  body.reading-mode .reader-col { gap: 0; }
+  body.reading-mode .reader-wrap { border: none; border-radius: 0; box-shadow: none; background: var(--read-bg, var(--surface)); }
+  body.reading-mode .viewport { background: var(--read-bg, var(--surface)); }
+  body.reading-mode .row { background: transparent !important; transition: none; }
+  body.reading-mode .ln { display: none; }
+  body.reading-mode .tx {
+    font-family: var(--read-font-family, inherit);
+    font-size: var(--read-font-size, 20px);
+    line-height: 1.9;
+    color: var(--read-text, var(--text));
+    padding: 0 var(--read-pad-x, 10vw) !important;
+  }
+  body.reading-mode .empty { background: var(--read-bg, var(--surface)); }
+  body.reading-mode .viewport::-webkit-scrollbar-thumb { background: var(--read-text, var(--glow)); }
+</style>
+</head>
+<body>
+  <div class="app" id="app">
+    <!-- 顶栏 -->
+    <header class="topbar">
+      <div class="brand">
+        <span class="dot"></span>
+        <span>TXT 阅读器 <small>· 项目 / 搜索 / 翻页</small></span>
+      </div>
+
+      <div class="ctrl">
+        <button class="btn-ghost" id="sideToggle" title="折叠 / 展开侧栏">☰</button>
+      </div>
+      <div class="ctrl">
+        <button class="btn-primary" id="openBtn">📂 打开文件</button>
+        <input type="file" id="fileInput" accept=".txt,text/plain" multiple />
+      </div>
+      <div class="ctrl">
+        <button class="btn-ghost" id="openFolderBtn">📁 打开文件夹</button>
+        <input type="file" id="folderInput" accept=".txt,text/plain" webkitdirectory directory multiple />
+      </div>
+
+      <div class="ctrl">
+        <label>编码</label>
+        <select id="encSelect" title="手动切换编码（自动检测后可在此覆盖）">
+          <option value="gbk">GBK</option>
+          <option value="big5">Big5</option>
+          <option value="utf-8">UTF-8</option>
+        </select>
+      </div>
+      <div class="ctrl">
+        <label>换行</label>
+        <div class="seg" id="wrapSeg">
+          <button data-wrap="1" class="active">自动</button>
+          <button data-wrap="0">不换行</button>
+        </div>
+      </div>
+      <div class="ctrl">
+        <label>字号</label>
+        <select id="fontSelect">
+          <option value="14">14px</option>
+          <option value="16" selected>16px</option>
+          <option value="18">18px</option>
+          <option value="20">20px</option>
+          <option value="24">24px</option>
+        </select>
+      </div>
+      <div class="ctrl">
+        <label>主题</label>
+        <div class="seg" id="themeSeg" role="group" aria-label="主题切换">
+          <button data-theme="light" title="明亮护眼 · 暖纸感减蓝光" aria-label="明亮护眼主题">☀ 亮</button>
+          <button data-theme="dark" title="暗色护眼 · 非纯黑柔对比" aria-label="暗色护眼主题">🌙 暗</button>
+          <button data-theme="system" title="跟随系统" aria-label="跟随系统">⚙ 系统</button>
+        </div>
+      </div>
+
+      <div class="ctrl">
+        <button class="btn-ghost" id="readModeBtn" title="进入纯净阅读模式 (R)">📖 纯净阅读</button>
+      </div>
+    </header>
+
+    <!-- 主体 -->
+    <div class="body">
+      <!-- 侧栏 -->
+      <aside class="sidebar" id="sidebar">
+        <section class="panel" id="filePanel">
+          <div class="panel-head">
+            <button class="chev" data-target="filePanel">▾</button>
+            <span>文件列表</span>
+            <div class="panel-actions">
+              <button id="clearFilesBtn" title="关闭所有文件">✕</button>
+            </div>
+            <span class="count" id="fileCount">0</span>
+          </div>
+          <div class="panel-body">
+            <input class="search" id="fileSearch" placeholder="搜索文件…" />
+            <div class="list" id="fileList"></div>
+          </div>
+        </section>
+
+        <section class="panel" id="searchPanel">
+          <div class="panel-head">
+            <button class="chev" data-target="searchPanel">▾</button>
+            <span>搜索定位</span>
+            <span class="count" id="searchCount">0</span>
+          </div>
+          <div class="panel-body">
+            <div class="search-wrap">
+              <input class="search" id="locSearch" placeholder="搜索关键词定位…（回车跳转下一处）" />
+              <button class="search-btn" id="locSearchBtn" type="button" title="搜索 / 跳转下一处 (Enter)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <span class="btn-text">搜索</span>
+              </button>
+            </div>
+            <div class="match-info" id="matchInfo"><span class="dot"></span>第 0 / 0 个</div>
+            <div class="list" id="searchList"></div>
+          </div>
+        </section>
+      </aside>
+
+      <!-- 阅读列 -->
+      <main class="reader-col">
+        <div class="reader-wrap">
+          <div class="viewport" id="viewport">
+            <div id="spacer"></div>
+            <div id="content"></div>
+          </div>
+          <div class="empty" id="empty">
+            <div class="help-card">
+              <div class="help-header">
+                <div class="help-icon">📄</div>
+                <div class="help-title">TXT 阅读器</div>
+                <div class="help-version">v1.0</div>
+              </div>
+
+              <div class="help-section">
+                <h3>📌 项目简介</h3>
+                <p>一款浏览器端的 TXT 阅读工具，专为中文小说、日志、剧本等长文本设计。支持 GBK / Big5 / UTF-8 自动识别，按真实显示行分页，提供关键词搜索、纯净阅读模式、护眼主题与快捷键操作，让阅读回归沉浸。</p>
+              </div>
+
+              <div class="help-section">
+                <h3>✨ 主要功能</h3>
+                <ul>
+                  <li><strong>自动编码识别</strong>：智能检测 GBK / Big5 / UTF-8，也可手动切换。</li>
+                  <li><strong>真实显示行分页</strong>：按实际折行后的视觉行计算页码，翻页精准。</li>
+                  <li><strong>关键词搜索定位</strong>：支持循环跳转、正文内联高亮、显示第 X/N 个匹配。</li>
+                  <li><strong>纯净阅读模式</strong>：一键隐藏 UI，自定义字号、字体、宽度与背景色。</li>
+                  <li><strong>护眼主题</strong>：明亮暖纸感 / 暗色非纯黑柔对比，明暗一键切换。</li>
+                  <li><strong>自动翻页</strong>：可设定 15–90 秒/页，空格启停。</li>
+                </ul>
+              </div>
+
+              <div class="help-section">
+                <h3>⌨ 快捷键</h3>
+                <div class="help-grid">
+                  <div class="key"><span class="help-kbd">PageUp</span></div><div class="act">上一页</div>
+                  <div class="key"><span class="help-kbd">PageDown</span></div><div class="act">下一页</div>
+                  <div class="key"><span class="help-kbd">Home</span></div><div class="act">跳到开头</div>
+                  <div class="key"><span class="help-kbd">End</span></div><div class="act">跳到结尾</div>
+                  <div class="key"><span class="help-kbd">空格</span></div><div class="act">启停自动翻页</div>
+                  <div class="key"><span class="help-kbd">R</span></div><div class="act">进入 / 退出纯净阅读模式</div>
+                  <div class="key"><span class="help-kbd">Esc</span></div><div class="act">退出纯净阅读模式</div>
+                  <div class="key"><span class="help-kbd">Ctrl</span> + <span class="help-kbd">↑</span></div><div class="act">上一个文件</div>
+                  <div class="key"><span class="help-kbd">Ctrl</span> + <span class="help-kbd">↓</span></div><div class="act">下一个文件</div>
+                  <div class="key"><span class="help-kbd">Ctrl</span> + <span class="help-kbd">←</span></div><div class="act">上一处匹配</div>
+                  <div class="key"><span class="help-kbd">Ctrl</span> + <span class="help-kbd">→</span></div><div class="act">下一处匹配</div>
+                </div>
+              </div>
+
+              <div class="help-section">
+                <h3>🚀 基本操作</h3>
+                <ul>
+                  <li>点击顶栏「<strong>打开文件</strong>」或「<strong>打开文件夹</strong>」载入 TXT。</li>
+                  <li>在左侧「文件列表」切换文件，在「搜索定位」输入关键词并按回车或搜索按钮跳转。</li>
+                  <li>在顶栏可调整编码、换行、字号、主题，点击「📖 纯净阅读」进入沉浸模式。</li>
+                  <li>在纯净阅读模式下，可调整字号、字体、页面宽度与背景色，按 R 或 Esc 退出。</li>
+                  <li>阅读进度会<strong>自动保存</strong>；需要时点击翻页栏「<strong>↺ 恢复进度</strong>」回到上次阅读位置。</li>
+                </ul>
+              </div>
+
+              <div class="help-tip">提示：编码/字号下拉框聚焦时，PageUp / PageDown 不会触发翻页，避免误操作。</div>
+            </div>
+          </div>
+        </div>
+
+      <div class="pagebar">
+        <button class="btn-icon" id="prevPage" title="上一页">◀ 上一页</button>
+        <span id="pageInfo">1 / 1</span>
+        <button class="btn-icon" id="nextPage" title="下一页">下一页 ▶</button>
+        <button class="btn-icon" id="restoreBtn" title="恢复到上次阅读位置（仅本文件有保存进度时可用）">↺ 恢复进度</button>
+        <button class="btn-icon" id="clearProgressBtn" title="清除所有文件的阅读进度记录">🗑 清除进度</button>
+        <button class="btn-icon" id="autoPlay" title="自动翻页（空格）">▶| 自动翻页 (空格)</button>
+        <span class="speed-box">
+          <label>每页</label>
+          <input type="number" id="speedInput" min="15" max="90" step="15" value="30" />
+          <span id="speedVal">30s/页</span>
+        </span>
+      </div>
+      </main>
+    </div>
+
+    <!-- 状态栏 -->
+    <footer class="statusbar">
+      <div class="item">文件：<b id="stFile">—</b></div>
+      <div class="item">检测编码：<span class="chip"><span class="pulse"></span><b id="stDetect">—</b></span></div>
+      <div class="item">当前编码：<b id="stCurrent">—</b></div>
+      <div class="spacer"></div>
+      <div class="item">行数：<b id="stLines">0</b></div>
+      <div class="item">字符：<b id="stChars">0</b></div>
+    </footer>
+  </div>
+
+  <!-- 纯净阅读模式控制条 -->
+  <div class="read-bar" id="readBar" hidden>
+    <div class="grp">
+      <label>字号</label>
+      <button id="readFontMinus" type="button" title="减小字号">A−</button>
+      <span id="readFontVal" style="min-width:38px;text-align:center;font-weight:600;font-size:13px;font-variant-numeric:tabular-nums;">20px</span>
+      <button id="readFontPlus" type="button" title="增大字号">A＋</button>
+    </div>
+    <span class="sep"></span>
+    <div class="grp">
+      <div class="seg" id="readFontSeg">
+        <button data-font="sans" class="active" type="button">黑体</button>
+        <button data-font="serif" type="button">宋体</button>
+        <button data-font="mono" type="button">等宽</button>
+      </div>
+    </div>
+    <span class="sep"></span>
+    <div class="grp">
+      <label>宽度</label>
+      <div class="seg" id="readWidthSeg">
+        <button data-width="narrow" type="button">窄</button>
+        <button data-width="medium" class="active" type="button">中</button>
+        <button data-width="wide" type="button">宽</button>
+      </div>
+    </div>
+    <span class="sep"></span>
+    <div class="grp">
+      <label>背景</label>
+      <div class="swatches" id="readSwatches"></div>
+    </div>
+    <span class="sep"></span>
+    <div class="grp">
+      <button id="readThemeToggle" type="button" title="明暗主题切换">🌓</button>
+    </div>
+    <span class="sep"></span>
+    <div class="grp actions">
+      <button id="readSettings" class="btn-ghost settings-btn" type="button" title="收起 / 展开设置">
+        <span class="settings-text">⚙ 设置</span>
+        <span class="settings-icon">⚙</span>
+      </button>
+      <button class="exit" id="readExit" type="button" title="退出纯净阅读 (R / Esc)">✕ 退出</button>
+    </div>
+  </div>
+
+<script>
+"use strict";
+(function () {
+  /* ---------- DOM ---------- */
+  const $ = (id) => document.getElementById(id);
+  const app        = $('app');
+  const viewport   = $('viewport');
+  const spacer     = $('spacer');
+  const content    = $('content');
+  const empty      = $('empty');
+  const fileInput  = $('fileInput');
+  const folderInput= $('folderInput');
+  const openBtn    = $('openBtn');
+  const openFolderBtn = $('openFolderBtn');
+  const sideToggle = $('sideToggle');
+  const encSelect  = $('encSelect');
+  const fontSelect = $('fontSelect');
+  const wrapSeg    = $('wrapSeg');
+  const themeSeg   = $('themeSeg');
+  const fileListEl = $('fileList');
+  const fileSearch = $('fileSearch');
+  const fileCount  = $('fileCount');
+  const searchListEl = $('searchList');
+  const locSearch  = $('locSearch');
+  const locSearchBtn = $('locSearchBtn');
+  const searchCount= $('searchCount');
+  const matchInfo  = $('matchInfo');
+  const clearFilesBtn = $('clearFilesBtn');
+  const toast = $('toast');
+  const pageInfo   = $('pageInfo');
+  const prevPageBtn= $('prevPage');
+  const nextPageBtn= $('nextPage');
+  const autoPlayBtn= $('autoPlay');
+  const restoreBtn  = $('restoreBtn');
+  const clearProgressBtn = $('clearProgressBtn');
+  const speedInput = $('speedInput');
+  const speedVal   = $('speedVal');
+
+  const stFile    = $('stFile');
+  const stDetect  = $('stDetect');
+  const stCurrent = $('stCurrent');
+  const stLines   = $('stLines');
+  const stChars   = $('stChars');
+
+  // 纯净阅读模式相关 DOM
+  const readBar         = $('readBar');
+  const readModeBtn     = $('readModeBtn');
+  const readFontMinus   = $('readFontMinus');
+  const readFontPlus    = $('readFontPlus');
+  const readFontVal     = $('readFontVal');
+  const readFontSeg     = $('readFontSeg');
+  const readWidthSeg    = $('readWidthSeg');
+  const readSwatches    = $('readSwatches');
+  const readThemeToggle = $('readThemeToggle');
+  const readExit        = $('readExit');
+  const readSettingsBtn = $('readSettings');
+
+  /* ---------- 数据 ---------- */
+  const project = { files: [] };   // { name, path, bytes }
+  let activeIndex = -1;
+
+  const state = {
+    bytes: null, detected: null, enc: 'gbk',
+    lines: [], lineHeights: [], offsets: [], totalHeight: 0,
+    visualRows: [],       // { text, lineIndex, rowIndex, start, end } 真实显示行
+    lineFirstVisualRow: [], // 逻辑行 -> 首个视觉行索引
+    maxTextWidth: 0, gutter: 60, fontSize: 16, lineHeight: 29,
+    fontFamily: '"Segoe UI", system-ui, -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif',
+    wrap: true, fileName: '', filePath: '', fileId: '', charCount: 0, pages: []
+  };
+
+  /* ---------- 测量 canvas ---------- */
+  const mCanvas = document.createElement('canvas');
+  const mctx = mCanvas.getContext('2d');
+  // 单字符像素宽度缓存：同文档字符集有限（常用字几千个），命中后免 measureText 调用。
+  // 字体/字号变化时必须清空（applyFont 内），否则行宽会失真。
+  const widthCache = new Map();
+  function applyFont() { mctx.font = state.fontSize + 'px ' + state.fontFamily; widthCache.clear(); }
+  function textWidth(s) { return mctx.measureText(s).width; }
+  function measureWrapRows(text, maxWidth) {
+    return wrapText(text, maxWidth).length;
+  }
+  // 按 maxWidth 把一段文本拆成真实显示行（视觉行）
+  // 优化：单字符宽度缓存 + 单次扫描贪心。
+  // 原实现每行做多次二分 measureText（O(每行字符数·log)），
+  // 大文件会触发百万级同步 measureText 调用、钉死主线程导致界面卡死。
+  // 新实现每个字符仅在首次测量（缓存命中后为零开销查表），整体 O(总字符数)，
+  // 大文件排版提速约 100× 以上，且仍保持“真实显示行”的近似精度。
+  function wrapText(text, maxWidth) {
+    if (maxWidth <= 0) return [''];
+    const n = text.length;
+    if (n === 0) return [''];
+    const rows = [];
+    let start = 0, w = 0;
+    for (let i = 0; i < n; i++) {
+      let cw = widthCache.get(text[i]);
+      if (cw === undefined) { cw = mctx.measureText(text[i]).width; widthCache.set(text[i], cw); }
+      if (i > start && w + cw > maxWidth) {
+        rows.push(text.slice(start, i));   // 当前行已满，断开（贪心：能塞就塞）
+        start = i; w = cw;
+      } else {
+        w += cw;
+      }
+    }
+    rows.push(text.slice(start));
+    return rows.length ? rows : [''];
+  }
+
+  /* ---------- 编码检测 ---------- */
+  function decodeBytes(bytes, enc) { try { return new TextDecoder(enc, { fatal: false }).decode(bytes); } catch (e) { return null; } }
+  function scoreText(text) {
+    let errors = 0, cjk = 0, punct = 0;
+    for (let i = 0; i < text.length; i++) {
+      const c = text.charCodeAt(i);
+      if (c === 0xFFFD) errors++;
+      else if (c >= 0x4E00 && c <= 0x9FFF) cjk++;
+      else if (c >= 0x3000 && c <= 0x303F) punct++;
+      else if (c >= 0xFF00 && c <= 0xFFEF) punct++;
+    }
+    return { errors, cjk, punct };
+  }
+  function detectEncoding(bytes) {
+    const sample = bytes.subarray(0, Math.min(bytes.length, 65536));
+    try { const u8 = new TextDecoder('utf-8', { fatal: true }).decode(sample); if (/[^\x00-\x7F]/.test(u8)) return 'utf-8'; } catch (e) {}
+    const g = scoreText(decodeBytes(sample, 'gbk') || '');
+    const b = scoreText(decodeBytes(sample, 'big5') || '');
+    if (g.errors < b.errors) return 'gbk';
+    if (b.errors < g.errors) return 'big5';
+    return (g.cjk + g.punct) >= (b.cjk + b.punct) ? 'gbk' : 'big5';
+  }
+
+  /* ---------- 解码 + 布局 ---------- */
+  function decodeAndRender() {
+    if (!state.bytes) return;
+    const text = decodeBytes(state.bytes, state.enc) || '';
+    state.lines = text.split(/\r\n|\r|\n/);
+    let chars = 0;
+    for (let i = 0; i < state.lines.length; i++) chars += state.lines[i].length;
+    state.charCount = chars;
+    stChars.textContent = chars.toLocaleString();
+    stCurrent.textContent = state.enc.toUpperCase();
+    empty.classList.add('hidden');
+    computeLayout();
+    suppressAutoSave = true;
+    isScrolling = true;
+    viewport.scrollTop = 0;
+    navPage = 1;
+    render();
+    setTimeout(() => { suppressAutoSave = false; isScrolling = false; }, 500);
+    buildSearchList(locSearch.value);
+  }
+
+  function computeLayout() {
+    applyFont();
+    viewport.style.setProperty('--font-size', state.fontSize + 'px');   // 字号真正作用到 DOM 文本
+    viewport.style.setProperty('--line-height', state.lineHeight + 'px');
+    const n = state.lines.length;
+    const vw = viewport.clientWidth;
+    // 先用逻辑行数估算 gutter（最终会根据真实视觉行数修正，但 contentWidth 需要先有 gutter）
+    state.gutter = Math.max(48, String(n).length * (state.fontSize * 0.62) + 20);
+    // .tx 有 padding: 0 16px，还要留出 canvas 与 DOM 字体/测量差异的安全缓冲
+    // 让 JS 预估宽度比实际可用宽度更窄，从而预测行数 >= 浏览器实际行数，避免行高低估
+    const isRead = document.body.classList.contains('reading-mode');
+    const padX = isRead ? (window.readPadPx || 0) : 16;       // 单侧内边距（普通模式 .tx 为 16px）
+    const gutterForWidth = isRead ? 0 : state.gutter;        // 纯读下行号隐藏，宽度不占 gutter
+    const contentWidth = Math.max(40, (vw - gutterForWidth - padX * 2) * 0.96 - 12);
+
+    // 生成真实显示行（视觉行）
+    state.visualRows = [];
+    state.lineFirstVisualRow = new Array(n).fill(0);
+    let maxW = 0;
+    let charPos = 0, vri = 0;
+    for (let i = 0; i < n; i++) {
+      const line = state.lines[i] || '';
+      if (!state.wrap) {
+        const w = textWidth(line);
+        if (w > maxW) maxW = w;
+      }
+      const wrapped = state.wrap ? wrapText(line, contentWidth) : [line];
+      state.lineFirstVisualRow[i] = vri;
+      charPos = 0;
+      for (let r = 0; r < wrapped.length; r++) {
+        const text = wrapped[r];
+        const len = text.length;
+        state.visualRows.push({ text, lineIndex: i, rowIndex: r, start: charPos, end: charPos + len });
+        charPos += len;
+        vri++;
+      }
+    }
+
+    const totalV = state.visualRows.length;
+    state.gutter = Math.max(48, String(totalV).length * (state.fontSize * 0.62) + 20);
+    state.lineHeights = new Array(totalV).fill(state.lineHeight);
+    state.offsets = new Array(totalV + 1);
+    for (let i = 0; i <= totalV; i++) state.offsets[i] = i * state.lineHeight;
+    state.totalHeight = totalV * state.lineHeight;
+    state.maxTextWidth = maxW;
+    const fullWidth = state.wrap ? vw : (state.gutter + maxW + 8);
+    spacer.style.height = state.totalHeight + 'px';
+    spacer.style.width = fullWidth + 'px';
+    content.style.width = fullWidth + 'px';
+    stLines.textContent = totalV.toLocaleString();   // 状态栏显示真实显示行总数
+    buildPages();
+  }
+
+  /* ---------- 分页（基于视觉行，两行重叠衔接） ---------- */
+  function buildPages() {
+    const vh = viewport.clientHeight || 1;
+    const n = state.visualRows.length;
+    const pages = [0];
+    state.pages = pages;
+    if (n === 0) return;
+    const OVERLAP = 2;                 // 每页底部向下一页保留的行数，保证上下文衔接
+    const rowsPerScreen = Math.max(3, Math.floor(vh / state.lineHeight)); // 视口能容纳的视觉行数
+    const stepRows = rowsPerScreen - OVERLAP; // 每页推进的视觉行数（重叠 2 行）
+    if (stepRows <= 0) { state.pages = [0]; return; }
+    const lastStart = Math.max(0, n - rowsPerScreen); // 末页起点：从底部倒推一屏
+    let L = 0, guard = 0;
+    while (guard++ < n + 5) {
+      const next = L + stepRows;
+      if (next >= lastStart) break;     // 再推进就超过末页起点，由末页兜底
+      pages.push(next);
+      L = next;
+    }
+    if (pages[pages.length - 1] !== lastStart) pages.push(lastStart);
+    state.pages = pages;
+  }
+
+  /* ---------- 虚拟滚动 ---------- */
+  function lowerBound(y) {
+    const off = state.offsets;
+    let lo = 0, hi = off.length - 1, ans = 0;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (off[mid] <= y) { ans = mid; lo = mid + 1; } else hi = mid - 1;
+    }
+    return Math.min(ans, state.visualRows.length - 1);
+  }
+  function escapeHtml(s) { return s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+
+  let ticking = false;
+  function render() {
+    const n = state.visualRows.length;
+    if (!n) { content.innerHTML = ''; updatePageInfo(); return; }
+    const scrollTop = viewport.scrollTop;
+    const vh = viewport.clientHeight;
+    let start = lowerBound(scrollTop);
+    let end = lowerBound(scrollTop + vh);
+    start = Math.max(0, start - 4);
+    end = Math.min(n - 1, end + 8);
+    const gw = state.gutter + 'px';
+    let html = '';
+    for (let i = start; i <= end; i++) {
+      const vr = state.visualRows[i];
+      const txHtml = (vr.lineIndex === currentMatchLine && currentMatchQuery && currentMatchStart >= 0)
+        ? highlightVisualRow(vr, currentMatchQuery, currentMatchStart)
+        : escapeHtml(vr.text);
+      html += '<div class="row" style="height:' + state.lineHeight + 'px">'
+            + '<span class="ln" style="width:' + gw + '">' + (i + 1) + '</span>'
+            + '<span class="tx">' + txHtml + '</span></div>';
+    }
+    content.innerHTML = html;
+    content.style.transform = 'translateY(' + state.offsets[start] + 'px)';
+    updatePageInfo();
+  }
+  function onScroll() {
+    // 程序化滚动（翻页 / 恢复跳转）期间：持续续期「滚动结束」锁，直到滚动真正停止。
+    // 避免长 smooth 动画在 420ms 原锁释放后，残余 scroll 事件把 navPage 改写成中间值，
+    // 导致恢复到的目标页被覆盖（表现为「点了恢复却没跳到上次位置」）。
+    if (isScrolling) {
+      clearTimeout(scrollDoneTimer);
+      scrollDoneTimer = setTimeout(() => { isScrolling = false; }, 420);
+    }
+    if (!ticking) {
+      requestAnimationFrame(() => {
+        render();   // 始终重绘（虚拟滚动在 smooth 动画期间也需要随滚动更新可见内容）
+        // 手动滚动（非程序 smooth 滚动）时，把页码基准对齐到当前可见位置
+        if (!isScrolling && state.pages.length) { navPage = currentPage(); if (!suppressAutoSave) scheduleSaveProgress(); }
+        ticking = false;
+      });
+      ticking = true;
+    }
+  }
+
+  /* ---------- 翻页（基于行分页，页间保留两行重叠） ---------- */
+  // navPage：确定性页码基准。smooth 滚动动画期间 scrollTop 是中间值，
+  // 若每次都从 scrollTop 反查页码，连续翻页会出现“有时多有时少”。
+  // 故翻页以 navPage 为准，平滑滚动结束后再由手动滚动同步回 scrollTop。
+  let navPage = 1;
+  let isScrolling = false;
+  let scrollDoneTimer = null;
+
+  /* ---------- 阅读进度记忆（按文件持久化续读位置） ---------- */
+  const PROGRESS_KEY = 'txtreader-progress-v2';   // v2：与旧版（无 key 快照、串号覆盖）数据格式不兼容，旧 key 数据自动失效
+  const PROGRESS_MAX = 10;            // 最多保存 10 个文件的进度，超出按时间淘汰最早
+  let saveProgressTimer = null;
+  let toastTimer = null;
+  let pendingProgress = new Map();    // key -> 最新页码：按「文件 key」维度记录，切换文件互不覆盖（修复奇数文件进度丢失）
+  let suppressAutoSave = false;       // 程序化滚动（打开文件重置到顶部）期间抑制自动保存
+  // 轻量内容指纹（FNV-1a，仅对前 4KB 取样 + 字节长度），用于进度 key 的唯一标识。
+  // 仅开文件时计算一次并缓存到 state.fileId；避免仅用 bytes.length 做指纹时，
+  // 两个「同名/同字节长度」的文件 key 相撞、进度互相覆盖（表现为部分文件恢复失败）。
+  function fileFingerprint(bytes) {
+    if (!bytes || !bytes.length) return '';
+    let h = 0x811c9dc5;
+    const n = Math.min(bytes.length, 4096);
+    for (let i = 0; i < n; i++) { h ^= bytes[i]; h = Math.imul(h, 0x01000193); }
+    return (h >>> 0).toString(36) + '-' + bytes.length;
+  }
+  function progressKey() {
+    if (!state.fileName) return null;
+    const id = state.fileId || (state.bytes ? fileFingerprint(state.bytes) : '');
+    return (state.filePath || state.fileName) + '|' + state.fileName + '|' + id;
+  }
+  function loadProgress() {
+    const key = progressKey();
+    if (!key) return null;
+    try {
+      const map = JSON.parse(localStorage.getItem(PROGRESS_KEY) || '{}');
+      const p = map[key];
+      if (p && typeof p.page === 'number') return p;
+    } catch (e) {}
+    return null;
+  }
+  // 将进度写入指定 key，并维护「最多 10 个」容量（LRU：按 ts 升序淘汰最早）
+  function writeProgress(key, page, enc) {
+    if (!key || page < 1) return;
+    try {
+      let map = {};
+      const raw = localStorage.getItem(PROGRESS_KEY);
+      if (raw) map = JSON.parse(raw);
+      map[key] = { page: page, enc: enc || state.enc, ts: Date.now() };
+      const keys = Object.keys(map);
+      if (keys.length > PROGRESS_MAX) {
+        keys.sort((a, b) => (map[a].ts || 0) - (map[b].ts || 0));
+        while (keys.length > PROGRESS_MAX) delete map[keys.shift()];
+      }
+      localStorage.setItem(PROGRESS_KEY, JSON.stringify(map));
+    } catch (e) {}
+  }
+  function saveProgress(page) {
+    const key = progressKey();
+    if (key) writeProgress(key, page, state.enc);
+  }
+  function scheduleSaveProgress() {
+    if (suppressAutoSave) return;
+    const key = progressKey();
+    if (!key || navPage < 1) return;
+    pendingProgress.set(key, { page: navPage, enc: state.enc });
+    if (saveProgressTimer) clearTimeout(saveProgressTimer);
+    saveProgressTimer = setTimeout(flushSave, 400);
+  }
+  // 关闭页面 / 切到后台 / 切换文件前，把节流尚未落盘的进度立即写入。
+  // 以「文件 key」为维度批量写入，杜绝多文件切换时互相覆盖、导致部分文件进度丢失（原 shared pendingSave 会串号）。
+  function flushSave() {
+    if (saveProgressTimer) { clearTimeout(saveProgressTimer); saveProgressTimer = null; }
+    if (pendingProgress.size === 0) { updateRestoreBtn(); return; }
+    try {
+      const toSave = [];
+      pendingProgress.forEach((item, key) => {
+        if (item && item.page >= 1) {
+          toSave.push({ key, page: item.page, enc: item.enc });
+        }
+      });
+      pendingProgress.clear();
+      let map = {};
+      const raw = localStorage.getItem(PROGRESS_KEY);
+      if (raw) {
+        try { map = JSON.parse(raw); } catch (e) { map = {}; }
+      }
+      let baseTs = Date.now();
+      for (let i = 0; i < toSave.length; i++) {
+        const item = toSave[i];
+        map[item.key] = { page: item.page, enc: item.enc, ts: baseTs + i };
+      }
+      const allKeys = Object.keys(map);
+      if (allKeys.length > PROGRESS_MAX) {
+        allKeys.sort((a, b) => (map[a].ts || 0) - (map[b].ts || 0));
+        while (allKeys.length > PROGRESS_MAX) {
+          delete map[allKeys.shift()];
+        }
+      }
+      localStorage.setItem(PROGRESS_KEY, JSON.stringify(map));
+      updateRestoreBtn();
+    } catch (e) {
+      console.error('进度保存失败:', e);
+      showToast('进度保存失败，请稍后重试');
+    }
+  }
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 2600);
+  }
+  // 手动恢复进度：读取当前文件存档并平滑跳转到上次页。
+  // 复用 goToPage 的锁定路径（isScrolling=true + 滚动锁），与自动保存不冲突——
+  // 平滑滚动期间 onScroll 不会重算 navPage，动画结束后才由手动滚动接管，
+  // 自动保存写入的仍是恢复到的目标页。
+  function restoreProgress() {
+    try {
+      if (!state.lines.length) { showToast('请先打开文件'); return; }
+      const prog = loadProgress();
+      if (!prog || typeof prog.page !== 'number' || prog.page < 1) {
+        showToast('当前文件没有保存的阅读进度');
+        return;
+      }
+      if (!state.pages.length) {
+        showToast('当前文件尚未完成分页，请等待加载完成');
+        return;
+      }
+      const total = state.pages.length;
+      const page = Math.max(1, Math.min(prog.page, total));
+      goToPage(page);
+      showToast('已恢复到上次阅读位置 · 第 ' + page + ' / ' + total + ' 页');
+    } catch (e) {
+      console.error('进度恢复失败:', e);
+      showToast('进度恢复失败，请检查浏览器存储权限');
+    }
+  }
+  // 根据当前文件是否有可恢复的进度，启用/禁用「恢复进度」按钮（无进度时置灰）
+  function updateRestoreBtn() {
+    try {
+      const prog = loadProgress();
+      restoreBtn.disabled = !(prog && typeof prog.page === 'number' && prog.page > 0);
+    } catch (e) {
+      console.error('更新恢复按钮状态失败:', e);
+      restoreBtn.disabled = true;
+    }
+  }
+  // 清除所有文件的阅读进度记录（含旧版本遗留的脏数据），并同步按钮状态
+  function clearAllProgress() {
+    try {
+      localStorage.removeItem(PROGRESS_KEY);
+      localStorage.removeItem('txtreader-progress');
+      pendingProgress.clear();
+      updateRestoreBtn();
+      showToast('已清除所有阅读进度记录');
+    } catch (e) {
+      console.error('清除进度失败:', e);
+      showToast('清除进度失败，请检查浏览器存储权限');
+    }
+  }
+  function totalPages() { return state.pages.length || 1; }
+  function currentPage() {
+    if (isScrolling) return navPage;       // 程序滚动期间返回确定的目标页
+    if (!state.pages.length) return 1;
+    const top = viewport.scrollTop;
+    const maxTop = Math.max(0, state.totalHeight - (viewport.clientHeight || 1));
+    if (top >= maxTop - 1) return state.pages.length;
+    // 找最大且 <= top 的分页起点
+    let lo = 0, hi = state.pages.length - 1, ans = 0;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (state.offsets[state.pages[mid]] <= top) { ans = mid; lo = mid + 1; }
+      else hi = mid - 1;
+    }
+    return ans + 1;
+  }
+  function updatePageInfo() {
+    pageInfo.textContent = currentPage() + ' / ' + totalPages();
+  }
+  function goToPage(p) {
+    const pages = state.pages;
+    if (!pages.length) return;
+    p = Math.max(1, Math.min(p, pages.length));
+    navPage = p;
+    isScrolling = true;
+    viewport.scrollTo({ top: state.offsets[pages[p - 1]], behavior: 'smooth' });
+    clearTimeout(scrollDoneTimer);
+    // 动画兜底：约 420ms 后释放锁，之后手动滚动/页码反查恢复正常
+    scrollDoneTimer = setTimeout(() => { isScrolling = false; }, 420);
+    scheduleSaveProgress();
+  }
+  function nextPage() { goToPage(navPage + 1); resetAutoTimer(); }
+  function prevPage() { goToPage(navPage - 1); resetAutoTimer(); }
+
+  let autoTimer = null;
+  let autoSeconds = 30;           // 每页停留秒数（15–90，步进 15）
+  function fmtSpeed() { return autoSeconds + 's/页'; }
+  function updateSpeedLabel() { speedVal.textContent = fmtSpeed(); }
+  function tickAuto() {
+    if (currentPage() >= totalPages()) { stopAuto(); return; }
+    nextPage();
+  }
+  function startAuto() {
+    if (currentPage() >= totalPages()) goToPage(1);
+    autoPlayBtn.classList.add('active');
+    autoPlayBtn.textContent = '⏸ 暂停 (空格)';
+    if (autoTimer) clearInterval(autoTimer);
+    autoTimer = setInterval(tickAuto, autoSeconds * 1000);
+  }
+  function stopAuto() {
+    if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+    autoPlayBtn.classList.remove('active');
+    autoPlayBtn.textContent = '▶| 自动翻页 (空格)';
+  }
+  function toggleAuto() { if (autoTimer) stopAuto(); else startAuto(); }
+  // 手动翻页 / 跳转时重置自动翻页计时器（从当前页重新计时）
+  function resetAutoTimer() {
+    if (!autoTimer) return;
+    clearInterval(autoTimer);
+    autoTimer = setInterval(tickAuto, autoSeconds * 1000);
+  }
+
+  /* ---------- 文件列表 ---------- */
+  function gotoFileByOffset(dir) {
+    if (activeIndex < 0 || !project.files.length) return;
+    const target = activeIndex + dir;
+    if (target < 0 || target >= project.files.length) return;   // 边界：无操作
+    openFile(target);
+  }
+  function buildFileList(filter) {
+    const q = (filter || '').trim().toLowerCase();
+    fileCount.textContent = project.files.length;
+    fileListEl.innerHTML = '';
+    const items = project.files.filter(f => !q || f.name.toLowerCase().includes(q) || f.path.toLowerCase().includes(q));
+    if (!items.length) { fileListEl.innerHTML = '<div class="empty-list">' + (project.files.length ? '无匹配文件' : '尚未载入文件') + '</div>'; return; }
+    for (const f of items) {
+      const idx = project.files.indexOf(f);
+      const div = document.createElement('div');
+      div.className = 'list-item' + (idx === activeIndex ? ' active' : '');
+      div.innerHTML = '<span class="li-name">' + escapeHtml(f.name) + '</span><span class="li-path">' + escapeHtml(f.path) + '</span>';
+      div.addEventListener('click', () => openFile(idx));
+      fileListEl.appendChild(div);
+    }
+  }
+  function openFile(index) {
+    if (index < 0 || index >= project.files.length) return;
+    if (state.fileName && navPage >= 1) {
+      const currentKey = progressKey();
+      if (currentKey) {
+        writeProgress(currentKey, navPage, state.enc);
+      }
+    }
+    flushSave();
+    activeIndex = index;
+    const f = project.files[index];
+    state.bytes = f.bytes;
+    state.fileId = fileFingerprint(state.bytes);
+    state.fileName = f.name; state.filePath = f.path;
+    state.detected = detectEncoding(state.bytes);
+    state.enc = state.detected;
+    encSelect.value = state.detected;
+    stFile.textContent = f.name;
+    stDetect.textContent = state.detected.toUpperCase();
+    stopAuto();
+    navPage = 1; isScrolling = false;
+    content.style.opacity = '0';
+    decodeAndRender();
+    updatePageInfo();
+    updateRestoreBtn();
+    requestAnimationFrame(() => { content.style.opacity = '1'; });
+    buildFileList(fileSearch.value);
+  }
+
+  async function addFiles(fileList) {
+    const arr = Array.from(fileList).filter(f => /\.txt$/i.test(f.name) || f.type === 'text/plain');
+    if (!arr.length) return;
+    const reads = arr.map(async (f) => {
+      const buf = await f.arrayBuffer();
+      return { name: f.name, path: f.webkitRelativePath || f.name, bytes: new Uint8Array(buf) };
+    });
+    const entries = await Promise.all(reads);
+    const seen = new Set(project.files.map(x => x.path));
+    for (const e of entries) { if (!seen.has(e.path)) { project.files.push(e); seen.add(e.path); } }
+    if (activeIndex < 0 && project.files.length) openFile(0);
+    else buildFileList(fileSearch.value);
+  }
+
+  function clearAllFiles() {
+    project.files = [];
+    activeIndex = -1;
+    state.bytes = null;
+    state.lines = [];
+    state.lineHeights = [];
+    state.offsets = [];
+    state.totalHeight = 0;
+    state.visualRows = [];
+    state.lineFirstVisualRow = [];
+    state.maxTextWidth = 0;
+    state.pages = [];
+    state.fileName = '';
+    state.filePath = '';
+    state.charCount = 0;
+    content.innerHTML = '';
+    spacer.style.height = '0px';
+    spacer.style.width = '100%';
+    stopAuto();
+    navPage = 1; isScrolling = false;
+    stFile.textContent = '—';
+    stDetect.textContent = '—';
+    stCurrent.textContent = '—';
+    stLines.textContent = '0';
+    stChars.textContent = '0';
+    fileCount.textContent = '0';
+    buildFileList('');
+    searchListEl.innerHTML = '<div class="empty-list">尚未载入文件</div>';
+    searchCount.textContent = '0';
+    currentMatchIndex = -1; currentMatchLine = -1; currentMatchStart = -1; currentMatchQuery = '';
+    updateMatchInfo();
+    locSearch.value = '';
+    lastQuery = '';
+    empty.classList.remove('hidden');
+    updateRestoreBtn();   // 清空后无进度，禁用「恢复进度」按钮
+  }
+
+  /* ---------- 搜索定位 ---------- */
+  let searchMatches = [];       // { line, visualRow, snippet, query, matchStart }
+  let currentMatchIndex = -1;   // 当前命中索引（-1 表示尚未定位）
+  let currentMatchLine = -1;    // 当前高亮所在逻辑行（用于正文内联高亮）
+  let currentMatchStart = -1; // 当前高亮在逻辑行中的起始字符位置
+  let currentMatchQuery = '';   // 当前高亮关键词
+  let lastQuery = '';           // 上一次搜索词，避免重复重建列表导致索引被重置
+
+  function escapeHtmlRegExp(s) {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+  // 在单个视觉行中精确高亮与命中范围重叠的部分
+  function highlightVisualRow(vr, query, matchStart) {
+    if (!query) return escapeHtml(vr.text);
+    const matchEnd = matchStart + query.length;
+    if (matchEnd <= vr.start || matchStart >= vr.end) return escapeHtml(vr.text);
+    const overlapStart = Math.max(vr.start, matchStart);
+    const overlapEnd = Math.min(vr.end, matchEnd);
+    const relStart = overlapStart - vr.start;
+    const relEnd = overlapEnd - vr.start;
+    return escapeHtml(vr.text.slice(0, relStart))
+         + '<mark class="kw">' + escapeHtml(vr.text.slice(relStart, relEnd)) + '</mark>'
+         + escapeHtml(vr.text.slice(relEnd));
+  }
+  function updateMatchInfo() {
+    if (!matchInfo) return;
+    const cur = currentMatchIndex >= 0 ? (currentMatchIndex + 1) : 0;
+    matchInfo.innerHTML = '<span class="dot"></span>第 ' + cur + ' / ' + searchMatches.length + ' 个';
+  }
+  function buildSearchList(filter) {
+    const q = (filter || '').trim();
+    searchCount.textContent = '0';
+    searchListEl.innerHTML = '';
+    searchMatches = [];
+    currentMatchIndex = -1; currentMatchLine = -1; currentMatchStart = -1; currentMatchQuery = '';
+    if (!state.lines.length) { searchListEl.innerHTML = '<div class="empty-list">尚未载入文件</div>'; updateMatchInfo(); return; }
+    if (!q) { searchListEl.innerHTML = '<div class="empty-list">输入关键词定位到文本所在行</div>'; updateMatchInfo(); return; }
+    const ql = q.toLowerCase();
+    for (let i = 0; i < state.lines.length; i++) {
+      const t = state.lines[i] || '';
+      if (t.toLowerCase().includes(ql)) {
+        // 截取命中位置附近文本作为摘要
+        const idx = t.toLowerCase().indexOf(ql);
+        const start = Math.max(0, idx - 14);
+        const end   = Math.min(t.length, idx + ql.length + 28);
+        let snippet = t.slice(start, end);
+        if (start > 0) snippet = '…' + snippet;
+        if (end < t.length) snippet = snippet + '…';
+        // 定位该命中在视觉行中的首个位置（用于跳转/显示行号）
+        let visualRow = state.lineFirstVisualRow[i];
+        for (let v = visualRow; v < state.visualRows.length && state.visualRows[v].lineIndex === i; v++) {
+          if (state.visualRows[v].start <= idx && idx < state.visualRows[v].end) { visualRow = v; break; }
+        }
+        searchMatches.push({ line: i, visualRow, snippet, query: q, matchStart: idx });
+      }
+    }
+    searchCount.textContent = searchMatches.length;
+    updateMatchInfo();
+    if (!searchMatches.length) { searchListEl.innerHTML = '<div class="empty-list">未找到匹配</div>'; return; }
+    searchMatches.forEach((m, idx) => {
+      const div = document.createElement('div');
+      div.className = 'list-item';
+      div.dataset.line = m.line;
+      div.dataset.visualRow = m.visualRow;
+      // 列表内高亮关键词
+      const hl = escapeHtml(m.snippet).replace(
+        new RegExp(escapeHtmlRegExp(m.query), 'ig'),
+        '<span style="background:var(--glow);color:var(--text);border-radius:4px;padding:0 2px;">$&</span>'
+      );
+      div.innerHTML = '<span class="li-name">' + hl + '</span><span class="li-path">第 ' + (m.visualRow + 1) + ' 行</span>';
+      div.addEventListener('click', () => applyMatch(idx));
+      searchListEl.appendChild(div);
+    });
+  }
+
+  // 定位到指定命中项：正文滚动 + 正文内联高亮 + 列表高亮 + 序号显示
+  function applyMatch(idx) {
+    if (idx < 0 || idx >= searchMatches.length) return;
+    currentMatchIndex = idx;
+    const m = searchMatches[idx];
+    currentMatchLine = m.line;
+    currentMatchStart = m.matchStart;
+    currentMatchQuery = m.query;
+    // 根据当前布局重新计算命中位置对应的视觉行（避免字号/窗口改变后视觉行偏移）
+    const visualRow = lineCharToVisualRow(m.line, m.matchStart);
+    // 列表高亮并使当前项可见
+    const items = searchListEl.querySelectorAll('.list-item');
+    let activeItem = null;
+    items.forEach(el => {
+      const on = parseInt(el.dataset.line, 10) === m.line && parseInt(el.dataset.visualRow, 10) === visualRow;
+      el.classList.toggle('active', on);
+      if (on) activeItem = el;
+    });
+    if (activeItem) activeItem.scrollIntoView({ block: 'nearest' });
+    updateMatchInfo();
+    resetAutoTimer();   // 手动跳转重置自动翻页计时
+    viewport.scrollTo({ top: state.offsets[visualRow], behavior: 'smooth' });
+    render();           // 立即重渲染，正文内联高亮在滚动到位后即时呈现
+  }
+  // 逻辑行字符位置 -> 当前布局下对应的视觉行索引
+  function lineCharToVisualRow(lineIndex, charPos) {
+    const first = state.lineFirstVisualRow[lineIndex] || 0;
+    for (let v = first; v < state.visualRows.length && state.visualRows[v].lineIndex === lineIndex; v++) {
+      if (state.visualRows[v].start <= charPos && charPos < state.visualRows[v].end) return v;
+    }
+    return first;
+  }
+  // 布局变化（字号/窗口/换行/纯读设置）后刷新搜索列表视觉行号，并保留当前命中高亮
+  function refreshSearchAfterLayout() {
+    if (!locSearch.value.trim()) return;
+    const savedIdx = currentMatchIndex;
+    buildSearchList(locSearch.value);
+    if (savedIdx >= 0 && savedIdx < searchMatches.length) applyMatch(savedIdx);
+  }
+  // 下一处：到末尾后循环回第一个
+  function gotoNextMatch() {
+    if (!searchMatches.length) return;
+    applyMatch((currentMatchIndex + 1) % searchMatches.length);
+  }
+  // 上一处：到开头后循环回最后一个
+  function gotoPrevMatch() {
+    if (!searchMatches.length) return;
+    applyMatch((currentMatchIndex - 1 + searchMatches.length) % searchMatches.length);
+  }
+
+  /* ---------- 主题 ---------- */
+  function setTheme(t) {
+    if (t === 'system') {
+      const dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    } else {
+      document.documentElement.setAttribute('data-theme', t);
+    }
+    [...themeSeg.children].forEach(b => b.classList.toggle('active', b.dataset.theme === t));
+    try { localStorage.setItem('txtreader-theme', t); } catch (e) {}
+  }
+
+  /* ---------- 纯净阅读模式 ---------- */
+  // 纯净阅读配色对齐「护眼基调」：亮色全部暖纸感（减蓝光·无纯白），暗色全部非纯黑柔对比
+  // 与主界面 eye-care 主题同源（亮 #f6f1e7/#3d3529 暗 #1c1a24/#e8e3d6），形成统一视觉语言
+  const READ_THEMES = [
+    { name: '暖白',   bg: '#f6f1e7', text: '#3d3529', dark: false }, // 主界面护眼亮色同款
+    { name: '米白',   bg: '#faf4e8', text: '#463e30', dark: false },
+    { name: '羊皮纸', bg: '#efe3cd', text: '#564a31', dark: false }, // 暖棕羊皮纸，加深暖调
+    { name: '墨紫',   bg: '#1c1a24', text: '#e8e3d6', dark: true  }, // 主界面护眼暗色同款（非纯黑深紫灰）
+    { name: '石板',   bg: '#232733', text: '#dfe2ea', dark: true  }  // 柔和蓝灰，低刺眼
+  ];
+  const READ_FONTS = {
+    sans:  '"Segoe UI", system-ui, -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif',
+    serif: 'Georgia, "Songti SC", "SimSun", "Noto Serif SC", serif',
+    mono:  '"Cascadia Code", "JetBrains Mono", Consolas, "Courier New", monospace'
+  };
+  const READ_WIDTHS = { narrow: '18vw', medium: '10vw', wide: '5vw' };
+
+  let readSettings = { fontSize: 20, font: 'sans', bgIndex: 0, width: 'medium', theme: 'light' };
+  try {
+    const saved = JSON.parse(localStorage.getItem('txtreader-reading') || 'null');
+    if (saved && typeof saved === 'object') {
+      if (typeof saved.fontSize === 'number') readSettings.fontSize = saved.fontSize;
+      if (READ_FONTS[saved.font]) readSettings.font = saved.font;
+      if (typeof saved.bgIndex === 'number' && READ_THEMES[saved.bgIndex]) readSettings.bgIndex = saved.bgIndex;
+      if (READ_WIDTHS[saved.width]) readSettings.width = saved.width;
+      if (saved.theme === 'dark' || saved.theme === 'light') readSettings.theme = saved.theme;
+    }
+  } catch (e) {}
+  let lastLightIdx = 0, lastDarkIdx = 3;
+
+  function persistReading() {
+    try { localStorage.setItem('txtreader-reading', JSON.stringify(readSettings)); } catch (e) {}
+  }
+  function updateReadPad() {
+    const v = READ_WIDTHS[readSettings.width];
+    window.readPadPx = Math.max(0, window.innerWidth * parseFloat(v) / 100);
+  }
+  function applyReadingSettings() {
+    const t = READ_THEMES[readSettings.bgIndex] || READ_THEMES[0];
+    const rs = document.documentElement.style;
+    rs.setProperty('--read-font-size', readSettings.fontSize + 'px');
+    rs.setProperty('--read-font-family', READ_FONTS[readSettings.font]);
+    rs.setProperty('--read-pad-x', READ_WIDTHS[readSettings.width]);
+    rs.setProperty('--read-bg', t.bg);
+    rs.setProperty('--read-text', t.text);
+    updateReadPad();
+    if (readFontVal) readFontVal.textContent = readSettings.fontSize + 'px';
+    if (readFontSeg) [...readFontSeg.children].forEach(b => b.classList.toggle('active', b.dataset.font === readSettings.font));
+    if (readWidthSeg) [...readWidthSeg.children].forEach(b => b.classList.toggle('active', b.dataset.width === readSettings.width));
+    if (readSwatches) [...readSwatches.children].forEach(b => b.classList.toggle('active', parseInt(b.dataset.idx, 10) === readSettings.bgIndex));
+    if (readThemeToggle) readThemeToggle.textContent = readSettings.theme === 'dark' ? '☀' : '🌙';
+  }
+  function setReadBg(idx) {
+    if (!READ_THEMES[idx]) return;
+    readSettings.bgIndex = idx;
+    readSettings.theme = READ_THEMES[idx].dark ? 'dark' : 'light';
+    if (READ_THEMES[idx].dark) lastDarkIdx = idx; else lastLightIdx = idx;
+    persistReading(); applyReadingSettings();
+  }
+  function changeReadFont(delta) {
+    readSettings.fontSize = Math.min(40, Math.max(14, readSettings.fontSize + delta));
+    if (document.body.classList.contains('reading-mode')) {
+      state.fontSize = readSettings.fontSize;
+      state.lineHeight = Math.round(state.fontSize * 1.9);
+      if (state.bytes) { computeLayout(); render(); refreshSearchAfterLayout(); }
+    }
+    persistReading(); applyReadingSettings();
+  }
+  function setReadFont(key) {
+    if (!READ_FONTS[key]) return;
+    readSettings.font = key;
+    if (document.body.classList.contains('reading-mode')) {
+      state.fontFamily = READ_FONTS[key];
+      if (state.bytes) { computeLayout(); render(); refreshSearchAfterLayout(); }
+    }
+    persistReading(); applyReadingSettings();
+  }
+  function setReadWidth(key) {
+    if (!READ_WIDTHS[key]) return;
+    readSettings.width = key;
+    applyReadingSettings();
+    if (document.body.classList.contains('reading-mode') && state.bytes) { computeLayout(); render(); refreshSearchAfterLayout(); }
+  }
+  function toggleReadTheme() {
+    if (readSettings.theme === 'dark') setReadBg(lastLightIdx);
+    else setReadBg(lastDarkIdx);
+  }
+  function toggleReadingMode(force) {
+    const on = force !== undefined ? !!force : !document.body.classList.contains('reading-mode');
+    navPage = 1; isScrolling = false;       // 进入/退出纯净阅读重置翻页基准
+    if (on) {
+      document.body.classList.add('reading-mode');
+      state.fontSize = readSettings.fontSize;
+      state.fontFamily = READ_FONTS[readSettings.font];
+      state.lineHeight = Math.round(state.fontSize * 1.9);
+      applyReadingSettings();
+      if (readBar) readBar.hidden = false;
+      if (state.bytes) { computeLayout(); render(); refreshSearchAfterLayout(); }
+    } else {
+      document.body.classList.remove('reading-mode');
+      state.fontSize = parseInt(fontSelect.value, 10) || 16;
+      state.fontFamily = READ_FONTS.sans;
+      state.lineHeight = Math.round(state.fontSize * 1.8);
+      if (readBar) readBar.hidden = true;
+      if (state.bytes) { computeLayout(); render(); refreshSearchAfterLayout(); }
+    }
+  }
+
+  // 生成背景色板
+  if (readSwatches) {
+    READ_THEMES.forEach((t, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'swatch';
+      b.style.background = t.bg;
+      b.title = t.name + (t.dark ? '（暗）' : '（亮）');
+      b.dataset.idx = i;
+      b.addEventListener('click', () => setReadBg(i));
+      readSwatches.appendChild(b);
+    });
+  }
+
+  // 设置按钮：点击时先持久化当前设置，然后切换控制条展开/收起
+  function toggleReadBarCompact() {
+    persistReading();
+    if (readBar) readBar.classList.toggle('compact');
+  }
+
+  // 控件绑定
+  if (readModeBtn) readModeBtn.addEventListener('click', () => toggleReadingMode(true));
+  if (readExit) readExit.addEventListener('click', () => toggleReadingMode(false));
+  if (readSettingsBtn) readSettingsBtn.addEventListener('click', toggleReadBarCompact);
+  if (readFontMinus) readFontMinus.addEventListener('click', () => changeReadFont(-2));
+  if (readFontPlus) readFontPlus.addEventListener('click', () => changeReadFont(2));
+  if (readFontSeg) readFontSeg.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setReadFont(b.dataset.font); });
+  if (readWidthSeg) readWidthSeg.addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setReadWidth(b.dataset.width); });
+  if (readThemeToggle) readThemeToggle.addEventListener('click', toggleReadTheme);
+  applyReadingSettings();   // 初始化变量与控件高亮（即使未进入纯读也预设好）
+
+  /* ---------- 事件绑定 ---------- */
+  openBtn.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', (e) => { if (e.target.files) addFiles(e.target.files); fileInput.value = ''; });
+  openFolderBtn.addEventListener('click', () => folderInput.click());
+  folderInput.addEventListener('change', (e) => { if (e.target.files) addFiles(e.target.files); folderInput.value = ''; });
+  clearFilesBtn.addEventListener('click', clearAllFiles);
+
+  encSelect.addEventListener('change', () => { if (state.bytes) { state.enc = encSelect.value; decodeAndRender(); } });
+
+  fontSelect.addEventListener('change', () => {
+    state.fontSize = parseInt(fontSelect.value, 10);
+    state.lineHeight = Math.ceil(state.fontSize * 1.8);   // 1.8 倍行高，防止小字号重叠
+    if (state.bytes) {
+      computeLayout(); render();
+      refreshSearchAfterLayout();
+    }
+  });
+
+  wrapSeg.addEventListener('click', (e) => {
+    const btn = e.target.closest('button'); if (!btn) return;
+    state.wrap = btn.dataset.wrap === '1';
+    [...wrapSeg.children].forEach(b => b.classList.toggle('active', b === btn));
+    document.body.classList.toggle('nowrap', !state.wrap);
+    if (state.bytes) {
+      computeLayout(); viewport.scrollTop = 0; render();
+      refreshSearchAfterLayout();
+    }
+  });
+
+  themeSeg.addEventListener('click', (e) => { const btn = e.target.closest('button'); if (btn) setTheme(btn.dataset.theme); });
+  let savedTheme = 'system';
+  try { savedTheme = localStorage.getItem('txtreader-theme') || 'system'; } catch (e) {}
+  setTheme(savedTheme);
+  if (window.matchMedia) {
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (savedTheme === 'system') setTheme('system'); });
+  }
+
+  sideToggle.addEventListener('click', () => app.classList.toggle('sidebar-collapsed'));
+  document.querySelectorAll('.panel-head .chev').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const panel = document.getElementById(btn.dataset.target);
+      if (panel) panel.classList.toggle('collapsed');
+    });
+  });
+
+  fileSearch.addEventListener('input', () => buildFileList(fileSearch.value));
+  locSearch.addEventListener('input', () => {
+    buildSearchList(locSearch.value);
+    lastQuery = locSearch.value.trim();
+  });
+  // 搜索按钮 / 回车：首次跳到第一个匹配，之后依次跳下一处，末处循环回第一个
+  function triggerSearch() {
+    const q = locSearch.value.trim();
+    if (!q) { locSearch.focus(); return; }
+    if (q !== lastQuery) { buildSearchList(q); lastQuery = q; }  // 仅关键词变化时重建列表，保留索引
+    if (!searchMatches.length) { locSearch.focus(); return; }
+    gotoNextMatch();
+    locSearch.focus();
+  }
+  locSearchBtn.addEventListener('click', triggerSearch);
+  locSearch.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    triggerSearch();
+  });
+
+  prevPageBtn.addEventListener('click', prevPage);
+  nextPageBtn.addEventListener('click', nextPage);
+  autoPlayBtn.addEventListener('click', toggleAuto);
+  restoreBtn.addEventListener('click', restoreProgress);
+  clearProgressBtn.addEventListener('click', clearAllProgress);
+  // 关闭 / 切后台前强制落盘最后一次阅读进度，避免节流未触发就关页导致丢失
+  window.addEventListener('pagehide', flushSave);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushSave(); });
+  updateRestoreBtn();   // 初始（无文件）禁用「恢复进度」按钮
+
+  // 翻页速度（间隔秒数）调节
+  speedInput.addEventListener('input', () => {
+    let v = parseFloat(speedInput.value);
+    if (!isFinite(v)) return;
+    // 以 15 秒为单位吸附，范围 15–90
+    v = Math.round(v / 15) * 15;
+    if (v < 15) v = 15;
+    if (v > 90) v = 90;
+    autoSeconds = v;
+    updateSpeedLabel();
+    if (autoTimer) resetAutoTimer();   // 运行中实时调整间隔
+  });
+  speedInput.addEventListener('blur', () => {
+    speedInput.value = autoSeconds;
+  });
+  updateSpeedLabel();
+
+  // 快捷键
+  function isTyping(el) {
+    const tag = (el && el.tagName || '').toLowerCase();
+    return tag === 'input' || tag === 'select' || tag === 'textarea';
+  }
+  /* ---------- 主显示框：PageUp / PageDown 全局可靠翻页 ---------- */
+  // 捕获阶段绑定，先于任何潜在监听器与默认行为执行；
+  // 保证在「加载 / 空闲 / 滚动 / 任意焦点」下都能可靠响应，不被焦点或交互状态阻塞。
+  // 行为：PageUp = 上一页，PageDown = 下一页（与翻页栏一致）。
+  function handlePageKeys(e) {
+    const key = e.key;
+    if (key !== 'PageUp' && key !== 'PageDown' && key !== 'Home' && key !== 'End') return;
+    // Ctrl/Cmd + 这些键交给浏览器（标签切换等系统级行为），不拦截
+    if (e.ctrlKey || e.metaKey) return;
+    const tag = (e.target && e.target.tagName || '').toLowerCase();
+    // 在输入框 / 文本域中打字时，Home/End 用于移动光标（不拦截），避免破坏搜索框编辑体验；
+    // PageUp/PageDown 在单行输入框无原生作用，仍由下方逻辑接管翻页。
+    if (tag === 'input' || tag === 'textarea') {
+      if (key === 'Home' || key === 'End') return;
+    }
+    // 焦点位于下拉框（编码 encSelect / 字号 fontSelect）时：拦截翻页类按键、保持选中值不变——
+    // 既阻止原生选项切换（preventDefault），也阻止主显示框翻页（return），
+    // 同时阻止事件冒泡（stopPropagation），确保该按键在 select 上「无任何动作」。
+    // Home/End 在下拉框中无原生用途，同样放行交由下方逻辑跳转。
+    if (tag === 'select') {
+      if (key === 'PageUp' || key === 'PageDown') { e.preventDefault(); e.stopPropagation(); }
+      return;
+    }
+    e.preventDefault();          // 阻止浏览器默认的窗口/容器滚动
+    e.stopPropagation();         // 阻止冒泡到其它处理器，确保唯一、一致的行为
+    // 与翻页栏按钮、自动翻页共用同一套 buildPages 分页（navPage 确定性基准），
+    // 保证「1 次按键 = 精确 1 页 = 计数器 +1」，且两行重叠衔接内置于 buildPages，
+    // 不会出现“按几下就跳过多页”的问题。
+    if (key === 'PageUp') goToPage(navPage - 1);
+    else if (key === 'PageDown') goToPage(navPage + 1);
+    // Home 跳到开头（第一页），End 跳到结尾（最后一页，正文底部正好可见）
+    else if (key === 'Home') { goToPage(1); resetAutoTimer(); }
+    else if (key === 'End') { goToPage(totalPages()); resetAutoTimer(); }
+  }
+  window.addEventListener('keydown', handlePageKeys, true);
+
+  window.addEventListener('keydown', (e) => {
+    // Ctrl/Cmd + 方向键：文件 / 搜索定位导航（阻止浏览器默认行为）
+    if (e.ctrlKey || e.metaKey) {
+      let handled = true;
+      switch (e.key) {
+        case 'ArrowUp':    gotoFileByOffset(-1); break;   // 上一个文件
+        case 'ArrowDown':  gotoFileByOffset(1);  break;   // 下一个文件
+        case 'ArrowLeft':  gotoPrevMatch();        break;   // 上一处匹配
+        case 'ArrowRight': gotoNextMatch();        break;   // 下一处匹配
+        default: handled = false;
+      }
+      if (handled) { e.preventDefault(); return; }
+    }
+    // 空格 启停自动翻页（焦点在输入/选择/按钮时不触发，避免打断输入或重复触发）
+    if (e.code === 'Space') {
+      const tag = (e.target && e.target.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'select' || tag === 'textarea' || tag === 'button') return;
+      e.preventDefault();
+      toggleAuto();
+    }
+    // 纯净阅读模式：R 一键进入 / 退出；Esc 退出
+    if (e.key === 'Escape' && document.body.classList.contains('reading-mode')) {
+      e.preventDefault(); toggleReadingMode(false); return;
+    }
+    if ((e.key === 'r' || e.key === 'R') && !isTyping(e.target)) {
+      e.preventDefault(); toggleReadingMode();
+    }
+  });
+
+  let rzTimer = null;
+  window.addEventListener('resize', () => {
+    if (!state.bytes) return;
+    clearTimeout(rzTimer);
+    rzTimer = setTimeout(() => {
+      if (document.body.classList.contains('reading-mode')) updateReadPad();
+      computeLayout(); render();
+      refreshSearchAfterLayout();
+    }, 120);
+  });
+
+  viewport.addEventListener('scroll', onScroll, { passive: true });
+
+  // 初始
+  buildFileList('');
+})();
+</script>
+  <div class="toast" id="toast"></div>
+</body>
+</html>
