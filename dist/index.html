@@ -185,21 +185,6 @@
   .row:hover { background: var(--row-hover); }
   .ln { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: flex-end; text-align: right; padding: 0 14px 0 16px; color: var(--muted); user-select: none; border-right: 1px solid var(--border); font-variant-numeric: tabular-nums; white-space: nowrap; line-height: var(--line-height, 1.8); height: 100%; font-size: var(--font-size, 14px); }
   .tx { flex: 1 1 auto; min-height: 0; height: 100%; padding: 0 16px; white-space: pre-wrap; word-break: break-word; line-height: var(--line-height, 1.8); overflow: hidden; font-size: var(--font-size, 14px); }
-  /* 智能排版：段落首行缩进 2 字 */
-  .tx.para-start { text-indent: 2em; }
-  /* 智能排版设置弹层 */
-  .smart-wrap { position: relative; }
-  .smart-pop {
-    position: absolute; top: calc(100% + 8px); left: 0; z-index: 60; min-width: 230px;
-    background: var(--surface); backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px;
-    box-shadow: 0 20px 56px -26px var(--glow); display: none; flex-direction: column; gap: 10px;
-  }
-  .smart-pop.open { display: flex; }
-  .smart-pop label { display: flex; align-items: center; gap: 9px; font-size: 13px; cursor: pointer; user-select: none; }
-  .smart-pop input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); cursor: pointer; }
-  .smart-pop .pop-title { font-size: 12px; color: var(--muted); letter-spacing: .4px; margin-bottom: 2px; }
   body.nowrap .tx { white-space: pre; }
 
   .empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 14px; text-align: center; color: var(--muted); pointer-events: none; padding: 24px; overflow: auto; }
@@ -448,21 +433,6 @@
         </div>
       </div>
 
-      <div class="ctrl smart-wrap">
-        <label>智能排版</label>
-        <div class="seg" id="smartSeg" role="group" aria-label="智能排版开关">
-          <button data-smart="0" class="active">关</button>
-          <button data-smart="1">开</button>
-        </div>
-        <button class="btn-ghost" id="smartGear" title="智能排版选项" style="padding:6px 10px;">⚙</button>
-        <div class="smart-pop" id="smartPop">
-          <div class="pop-title">智能排版选项</div>
-          <label><input type="checkbox" id="smartIndent" checked /> 段首缩进 2 字</label>
-          <label><input type="checkbox" id="smartClean" checked /> 清理空行 / 空格 / 标点美化</label>
-          <label><input type="checkbox" id="smartMerge" /> 合并被硬换行截断的段落</label>
-        </div>
-      </div>
-
       <div class="ctrl">
         <button class="btn-ghost" id="readModeBtn" title="进入纯净阅读模式 (R)">📖 纯净阅读</button>
       </div>
@@ -564,7 +534,6 @@
                   <li>在顶栏可调整编码、换行、字号、主题，点击「📖 纯净阅读」进入沉浸模式。</li>
                   <li>在纯净阅读模式下，可调整字号、字体、页面宽度与背景色，按 R 或 Esc 退出。</li>
                   <li>阅读进度会<strong>自动保存</strong>；需要时点击翻页栏「<strong>↺ 恢复进度</strong>」回到上次阅读位置。</li>
-                  <li>顶栏「<strong>智能排版</strong>」可一键优化杂乱 TXT：清理空行/空格、段首缩进 2 字、弯引号美化；勾选「合并被硬换行截断的段落」可把按宽度折行的长段重新拼回完整段落（章节标题会自动识别为独立段，不被误并）。设置会被记忆。</li>
                 </ul>
               </div>
 
@@ -661,12 +630,6 @@
   const sideToggle = $('sideToggle');
   const encSelect  = $('encSelect');
   const fontSelect = $('fontSelect');
-  const smartSeg   = $('smartSeg');
-  const smartGear  = $('smartGear');
-  const smartPop   = $('smartPop');
-  const smartIndentChk = $('smartIndent');
-  const smartCleanChk  = $('smartClean');
-  const smartMergeChk  = $('smartMerge');
   const wrapSeg    = $('wrapSeg');
   const themeSeg   = $('themeSeg');
   const fileListEl = $('fileList');
@@ -718,9 +681,7 @@
     lineFirstVisualRow: [], // 逻辑行 -> 首个视觉行索引
     maxTextWidth: 0, gutter: 60, fontSize: 24, lineHeight: 44,
     fontFamily: '"Segoe UI", system-ui, -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif',
-    wrap: true, fileName: '', filePath: '', fileId: '', charCount: 0, pages: [],
-    smartLayout: false, smartMerge: false, smartIndent: true, smartClean: true,
-    paraStart: []            // 与 state.lines 对齐：true 表示该逻辑行是段落首行（用于首行缩进）
+    wrap: true, fileName: '', filePath: '', fileId: '', charCount: 0, pages: []
   };
 
   /* ---------- 测量 canvas ---------- */
@@ -783,79 +744,11 @@
     return (g.cjk + g.punct) >= (b.cjk + b.punct) ? 'gbk' : 'big5';
   }
 
-  /* ---------- 智能排版（结构重建 + 版式美化） ---------- */
-  // 章节 / 标题行识别：命中则作为独立段落边界，不参与「续行合并」，保留作者分段。
-  function isTitleLine(s) {
-    const t = (s || '').trim();
-    if (!t) return false;
-    // 章节标记须占据整行（允许尾部跟简短标题文字，最多 20 字），避免把正文里的“第一章……”误判为标题
-    if (/^第[0-9一二三四五六七八九十百千万零两\d]+[章回卷集节幕篇部]\s*.{0,20}$/.test(t)) return true;
-    if (/^Chapter\s*\d+\s*.{0,20}$/i.test(t)) return true;
-    if (/^(序章|序言|前言|楔子|引子|后记|尾声|番外|附录|目录|正文)$/.test(t)) return true;
-    if (/^[\s]*[☆★◆◇●◉■□▲△✦✧※].{0,30}$/.test(t)) return true;   // 晋江式特殊符号标题（单个）
-    return false;
-  }
-  // 单行清洗：去首尾空白、压缩内部空白（含全角空格 \u3000）、弯引号→全角直引号（左右分别映射）
-  function cleanLine(s) {
-    let t = (s || '').replace(/^\s+|\s+$/g, '');
-    if (!t) return '';
-    t = t.replace(/[ \t　]+/g, ' ');                       // 连续空格/全角空格 → 单空格
-    t = t.replace(/‘/g, '‘').replace(/’/g, '’').replace(/“/g, '“').replace(/”/g, '”'); // 弯引号 → 全角直引号
-    return t;
-  }
-  // 续行合并：把「上一行不以句末标点结束、且本行非标题」的相邻行并入同一段（修复被硬换行截断的段落）
-  function mergeContinuations(lines) {
-    const terminal = /[。！？…；：，、）】」』」]$/;
-    const out = [];
-    let buf = '';
-    for (let i = 0; i < lines.length; i++) {
-      const l = lines[i];
-      if (l === '') { if (buf) { out.push(buf); buf = ''; } out.push(''); continue; }
-      if (isTitleLine(l)) { if (buf) { out.push(buf); buf = ''; } out.push(l); continue; }
-      if (buf === '') { buf = l; continue; }
-      if (!terminal.test(buf)) buf += l;                  // 中文无缝拼接；英文词间无空格属可接受损失
-      else { out.push(buf); buf = l; }
-    }
-    if (buf) out.push(buf);
-    return out;
-  }
-  // 压缩连续空行：段落之间至多保留 1 个空行（避免原文成片空行撑开版式）
-  function compressBlanks(lines) {
-    const out = []; let lastBlank = false;
-    for (let i = 0; i < lines.length; i++) {
-      if (lines[i] === '') { if (!lastBlank) { out.push(''); lastBlank = true; } }
-      else { out.push(lines[i]); lastBlank = false; }
-    }
-    return out;
-  }
-  // 主入口：根据开关产出 { lines, paraStart }
-  function applySmartLayout(rawLines) {
-    if (!state.smartLayout) return { lines: rawLines, paraStart: rawLines.map(() => false) };
-    let lines = rawLines.map(l => state.smartClean ? cleanLine(l) : (l || '').replace(/^\s+|\s+$/g, ''));
-    if (state.smartMerge) lines = mergeContinuations(lines);
-    lines = compressBlanks(lines);
-    const paraStart = lines.map((l, i) => {
-      if (l === '') return false;
-      if (!state.smartIndent) return false;
-      if (i === 0) return true;
-      // 向前找到上一个非空行；其间有空行分隔 → 本行是段落首行
-      for (let j = i - 1; j >= 0; j--) {
-        if (lines[j] !== '') return false;               // 紧邻上一非空行：同段落续行
-        return true;                                       // 中间有空行：新段落
-      }
-      return true;
-    });
-    return { lines, paraStart };
-  }
-
   /* ---------- 解码 + 布局 ---------- */
   function decodeAndRender() {
     if (!state.bytes) return;
     const text = decodeBytes(state.bytes, state.enc) || '';
-    const rawLines = text.split(/\r\n|\r|\n/);
-    const norm = applySmartLayout(rawLines);
-    state.lines = norm.lines;
-    state.paraStart = norm.paraStart;
+    state.lines = text.split(/\r\n|\r|\n/);
     let chars = 0;
     for (let i = 0; i < state.lines.length; i++) chars += state.lines[i].length;
     state.charCount = chars;
@@ -977,10 +870,9 @@
       const txHtml = (vr.lineIndex === currentMatchLine && currentMatchStart >= 0 && currentMatchEnd > currentMatchStart)
         ? highlightVisualRow(vr, currentMatchStart, currentMatchEnd)
         : escapeHtml(vr.text);
-      const isParaStart = state.smartLayout && state.smartIndent && vr.rowIndex === 0 && state.paraStart[vr.lineIndex];
       html += '<div class="row" style="height:' + state.lineHeight + 'px">'
             + '<span class="ln" style="width:' + gw + '">' + (i + 1) + '</span>'
-            + '<span class="tx' + (isParaStart ? ' para-start' : '') + '">' + txHtml + '</span></div>';
+            + '<span class="tx">' + txHtml + '</span></div>';
     }
     content.innerHTML = html;
     content.style.transform = 'translateY(' + state.offsets[start] + 'px)';
@@ -1653,40 +1545,6 @@
       refreshSearchAfterLayout();
     }
   });
-
-  /* ---------- 智能排版：开关 + 选项 ---------- */
-  function persistSmart() {
-    try { localStorage.setItem('txtreader-smart', JSON.stringify({
-      layout: state.smartLayout, merge: state.smartMerge, indent: state.smartIndent, clean: state.smartClean
-    })); } catch (e) {}
-  }
-  function loadSmart() {
-    try {
-      const s = JSON.parse(localStorage.getItem('txtreader-smart') || 'null');
-      if (s) {
-        state.smartLayout = !!s.layout; state.smartMerge = !!s.merge;
-        state.smartIndent = s.indent !== false; state.smartClean = s.clean !== false;
-      }
-    } catch (e) {}
-  }
-  function applySmartUI() {
-    [...smartSeg.children].forEach(b => b.classList.toggle('active', b.dataset.smart === (state.smartLayout ? '1' : '0')));
-    if (smartIndentChk) smartIndentChk.checked = state.smartIndent;
-    if (smartCleanChk) smartCleanChk.checked = state.smartClean;
-    if (smartMergeChk) smartMergeChk.checked = state.smartMerge;
-  }
-  loadSmart(); applySmartUI();
-  smartSeg.addEventListener('click', (e) => {
-    const btn = e.target.closest('button'); if (!btn) return;
-    state.smartLayout = btn.dataset.smart === '1';
-    applySmartUI(); persistSmart();
-    if (state.bytes) decodeAndRender();
-  });
-  if (smartGear) smartGear.addEventListener('click', (e) => { e.stopPropagation(); smartPop.classList.toggle('open'); });
-  document.addEventListener('click', (e) => { if (smartPop && !smartPop.contains(e.target) && e.target !== smartGear) smartPop.classList.remove('open'); });
-  if (smartIndentChk) smartIndentChk.addEventListener('change', () => { state.smartIndent = smartIndentChk.checked; persistSmart(); if (state.bytes) decodeAndRender(); });
-  if (smartCleanChk) smartCleanChk.addEventListener('change', () => { state.smartClean = smartCleanChk.checked; persistSmart(); if (state.bytes) decodeAndRender(); });
-  if (smartMergeChk) smartMergeChk.addEventListener('change', () => { state.smartMerge = smartMergeChk.checked; persistSmart(); if (state.bytes) decodeAndRender(); });
 
   wrapSeg.addEventListener('click', (e) => {
     const btn = e.target.closest('button'); if (!btn) return;
