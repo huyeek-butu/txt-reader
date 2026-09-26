@@ -89,6 +89,7 @@
   .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border: none; font-weight: 600; box-shadow: 0 8px 24px -10px var(--glow); }
   .btn-primary:hover { box-shadow: 0 12px 30px -10px var(--glow); }
   .btn-ghost { background: var(--surface-solid); }
+  .btn-ghost.active { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; box-shadow: 0 6px 16px -10px var(--glow); }
 
   select { padding-right: 28px; appearance: none;
     background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
@@ -490,6 +491,9 @@
       <div class="ctrl">
         <button class="btn-ghost" id="simpleLayoutBtn" title="简单排版 · 按句分段">✒ 简单排版</button>
       </div>
+      <div class="ctrl">
+        <button class="btn-ghost active" id="layoutToggleBtn" title="正文按句分段排版（与「简单排版」同一规则，点击切换原样/排版）" aria-pressed="true">✒ 正文排版</button>
+      </div>
     </header>
 
     <!-- 主体 -->
@@ -756,7 +760,8 @@
     lineFirstVisualRow: [], // 逻辑行 -> 首个视觉行索引
     maxTextWidth: 0, gutter: 60, fontSize: 24, lineHeight: 44,
     fontFamily: '"Segoe UI", system-ui, -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif',
-    wrap: true, fileName: '', filePath: '', fileId: '', charCount: 0, pages: []
+    wrap: true, fileName: '', filePath: '', fileId: '', charCount: 0, pages: [],
+    layoutEnabled: true   // 主窗口正文是否套用「简单排版」同一规则（按句分段）
   };
 
   /* ---------- 测量 canvas ---------- */
@@ -820,14 +825,25 @@
   }
 
   /* ---------- 解码 + 布局 ---------- */
-  function decodeAndRender() {
+  // 依据 state.layoutEnabled 计算正文“逻辑行”：开启时套用 Layout 同款按句分段规则，
+  // 使主窗口显示与「简单排版」弹窗采用一致规则，避免重复实现。
+  function applyLayoutToLines() {
     if (!state.bytes) return;
     const text = decodeBytes(state.bytes, state.enc) || '';
-    state.lines = text.split(/\r\n|\r|\n/);
-    let chars = 0;
-    for (let i = 0; i < state.lines.length; i++) chars += state.lines[i].length;
-    state.charCount = chars;
-    stChars.textContent = chars.toLocaleString();
+    // 字符数始终按原文（不含换行）统计，与排版开关无关，保证状态栏稳定
+    state.charCount = text.replace(/\r\n|\r|\n/g, '').length;
+    stChars.textContent = state.charCount.toLocaleString();
+    let lines = text.split(/\r\n|\r|\n/);
+    if (state.layoutEnabled) {
+      const laid = Layout.simpleLayout(text);   // 复用同一模块：断句 + 按句分段 + 段间空行
+      if (laid) lines = laid.split('\n');       // 句子段落作为“逻辑行”，段落间空行自然形成段距
+    }
+    state.lines = lines;
+  }
+
+  function decodeAndRender() {
+    if (!state.bytes) return;
+    applyLayoutToLines();
     stCurrent.textContent = state.enc.toUpperCase();
     empty.classList.add('hidden');
     computeLayout();
@@ -928,59 +944,70 @@
   }
   function escapeHtml(s) { return s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
 
-  /* ---------- 简单排版：按句分段 ---------- */
-  // 句子结束标点（中文句号/问号/感叹号、英文 .?!、中文省略号 …）
-  const SENT_END = new Set(['。', '？', '?', '！', '!', '…']);
-  const SHORT_SENT = 6;    // 短句阈值（字符数，含标点）：≤ 此值的连续短句视为对话，合并到同一段（不空行）
-  // 按句子结束标点切分，保留标点；句子内空白压成单空格。返回句子数组（已 trim、去空）。
-  function splitSentences(text) {
-    let t = (text || '').replace(/\r\n?/g, '\n');
-    // 断句前：清除“非句末标点后的换行”，确保同一句不被换行断开。
-    // 仅当换行前一个字符为句末标点时保留（视为句/段边界），否则删除；
-    // 英文词中断行（前后均为字母/数字）补一个空格，避免单词粘连。
-    t = t.replace(/\n/g, (m, off) => {
-      const prev = off > 0 ? t[off - 1] : '';
-      const next = off + 1 < t.length ? t[off + 1] : '';
-      if (SENT_END.has(prev)) return '\n';   // 句末 → 保留为边界
-      // 删除换行但需避免粘连：前为字母/数字或逗号、后为字母/数字时补空格（英文词/逗号后断行）
-      const prevWord = /[A-Za-z0-9]/.test(prev) || prev === ',' || prev === '，';
-      const nextWord = /[A-Za-z0-9]/.test(next);
-      if (prevWord && nextWord && prev !== ' ' && prev !== '\t') return ' ';
-      return '';
-    }).replace(/\n{2,}/g, '\n');   // 多个换行压成单换行，空行不再干扰断句
-    const lines = t.split('\n');
-    const re = /[^。？！.!?…]*[。？！.!?…]+/g;   // 行内按句结束标点切分（行已无换行，故无需排除 \n）
-    const out = [];
-    for (const line of lines) {
-      if (!line.trim()) continue;                  // 空行跳过
-      let m, lastEnd = 0;
-      while ((m = re.exec(line)) !== null) { out.push(m[0]); lastEnd = m.index + m[0].length; }
-      const rest = line.slice(lastEnd);            // 行尾无结束标点的残句
-      if (rest.trim()) out.push(rest.trim());
+  /* ====================================================================
+   * 简单排版模块（可复用）
+   * 统一“按句分段”规则：同一句内不因换行断开；每句一段、段间空行；
+   * 连续短句（对话）合并同一段。主窗口正文与「简单排版」弹窗共用此模块，
+   * 保证显示规则与样式一致，避免重复实现。
+   * ================================================================== */
+  const Layout = (() => {
+    // 句子结束标点（中文句号/问号/感叹号、英文 .?!、中文省略号 …）
+    const SENT_END = new Set(['。', '？', '?', '！', '!', '…']);
+    const SHORT_SENT = 6;    // 短句阈值（字符数，含标点）：≤ 此值的连续短句视为对话，合并到同一段（不空行）
+
+    // 按句子结束标点切分，保留标点；句子内空白压成单空格。返回句子数组（已 trim、去空）。
+    function splitSentences(text) {
+      let t = (text || '').replace(/\r\n?/g, '\n');
+      // 断句前：清除“非句末标点后的换行”，确保同一句不被换行断开。
+      // 仅当换行前一个字符为句末标点时保留（视为句/段边界），否则删除；
+      // 英文词中断行（前后均为字母/数字）补一个空格，避免单词粘连。
+      t = t.replace(/\n/g, (m, off) => {
+        const prev = off > 0 ? t[off - 1] : '';
+        const next = off + 1 < t.length ? t[off + 1] : '';
+        if (SENT_END.has(prev)) return '\n';   // 句末 → 保留为边界
+        // 删除换行但需避免粘连：前为字母/数字或逗号、后为字母/数字时补空格（英文词/逗号后断行）
+        const prevWord = /[A-Za-z0-9]/.test(prev) || prev === ',' || prev === '，';
+        const nextWord = /[A-Za-z0-9]/.test(next);
+        if (prevWord && nextWord && prev !== ' ' && prev !== '\t') return ' ';
+        return '';
+      }).replace(/\n{2,}/g, '\n');   // 多个换行压成单换行，空行不再干扰断句
+      const lines = t.split('\n');
+      const re = /[^。？！.!?…]*[。？！.!?…]+/g;   // 行内按句结束标点切分（行已无换行，故无需排除 \n）
+      const out = [];
+      for (const line of lines) {
+        if (!line.trim()) continue;                  // 空行跳过
+        let m, lastEnd = 0;
+        while ((m = re.exec(line)) !== null) { out.push(m[0]); lastEnd = m.index + m[0].length; }
+        const rest = line.slice(lastEnd);            // 行尾无结束标点的残句
+        if (rest.trim()) out.push(rest.trim());
+      }
+      return out
+        .map(s => s.replace(/\s+/g, ' ').trim())      // 句子内多空格 → 单空格
+        .filter(s => s.length > 0);
     }
-    return out
-      .map(s => s.replace(/\s+/g, ' ').trim())      // 句子内多空格 → 单空格
-      .filter(s => s.length > 0);
-  }
-  // 排版：每句一段；段间空行；连续短句（≤ SHORT_SENT）视为对话，合并同一段不空行。
-  function simpleLayout(text) {
-    const sents = splitSentences(text);
-    if (!sents.length) return '';
-    const paras = [];
-    let buf = [];
-    for (let i = 0; i < sents.length; i++) {
-      const s = sents[i];
-      buf.push(s);
-      const isShort = s.length <= SHORT_SENT;
-      const next = sents[i + 1];
-      const nextShort = next ? next.length <= SHORT_SENT : false;
-      const lastOne = !next;
-      // 本句作为段落结尾：最后一句，或“非连续短句”边界（当前或下一句有一个不是短句）
-      const breakAfter = lastOne || !(isShort && nextShort);
-      if (breakAfter) { paras.push(buf.join('')); buf = []; }
+
+    // 排版：每句一段；段间空行；连续短句（≤ SHORT_SENT）视为对话，合并同一段不空行。
+    function simpleLayout(text) {
+      const sents = splitSentences(text);
+      if (!sents.length) return '';
+      const paras = [];
+      let buf = [];
+      for (let i = 0; i < sents.length; i++) {
+        const s = sents[i];
+        buf.push(s);
+        const isShort = s.length <= SHORT_SENT;
+        const next = sents[i + 1];
+        const nextShort = next ? next.length <= SHORT_SENT : false;
+        const lastOne = !next;
+        // 本句作为段落结尾：最后一句，或“非连续短句”边界（当前或下一句有一个不是短句）
+        const breakAfter = lastOne || !(isShort && nextShort);
+        if (breakAfter) { paras.push(buf.join('')); buf = []; }
+      }
+      return paras.join('\n\n');
     }
-    return paras.join('\n\n');
-  }
+
+    return { SENT_END, SHORT_SENT, splitSentences, simpleLayout };
+  })();
 
   let ticking = false;
   function render() {
@@ -1739,11 +1766,25 @@
   const slInput = $('slInput');
   const slOutput = $('slOutput');
   const slStat = $('slStat');
+  // 主窗口「正文排版」开关：复用 Layout 模块，使阅读视图与「简单排版」弹窗规则一致
+  const layoutToggleBtn = $('layoutToggleBtn');
+  layoutToggleBtn.classList.toggle('active', state.layoutEnabled);
+  layoutToggleBtn.setAttribute('aria-pressed', String(state.layoutEnabled));
+  layoutToggleBtn.addEventListener('click', () => {
+    if (!state.bytes) return;
+    state.layoutEnabled = !state.layoutEnabled;
+    layoutToggleBtn.classList.toggle('active', state.layoutEnabled);
+    layoutToggleBtn.setAttribute('aria-pressed', String(state.layoutEnabled));
+    applyLayoutToLines();
+    computeLayout();
+    render();
+    buildSearchList(locSearch.value);
+  });
   function runSimpleLayout() {
     const src = slInput.value;
-    const out = simpleLayout(src);
+    const out = Layout.simpleLayout(src);          // 复用同一模块
     slOutput.value = out;
-    const sents = splitSentences(src);
+    const sents = Layout.splitSentences(src);
     slStat.textContent = src.trim() ? ('共 ' + sents.length + ' 句 · ' + out.split('\n\n').filter(Boolean).length + ' 段') : '';
   }
   let slTimer = null;
