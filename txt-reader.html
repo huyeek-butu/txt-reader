@@ -288,6 +288,57 @@
 
   input[type=file] { display: none; }
 
+  /* ============ 简单排版弹窗 ============ */
+  .modal-mask {
+    position: fixed; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center;
+    background: rgba(10,12,20,.55); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+    padding: 20px;
+  }
+  .modal-mask[hidden] { display: none; }
+  .modal-card {
+    width: min(760px, 100%); max-height: 88vh; display: flex; flex-direction: column;
+    background: var(--surface); backdrop-filter: blur(26px) saturate(180%);
+    -webkit-backdrop-filter: blur(26px) saturate(180%);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: 0 30px 80px -24px rgba(0,0,0,.6); overflow: hidden;
+    transition: background-color .4s var(--ease), border-color .4s var(--ease);
+  }
+  .modal-head {
+    display: flex; align-items: center; gap: 10px; padding: 14px 18px;
+    border-bottom: 1px solid var(--border); font-weight: 700; font-size: 15px;
+  }
+  .modal-head .modal-x {
+    margin-left: auto; padding: 4px 10px; border-radius: 8px; border: none;
+    background: transparent; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1;
+  }
+  .modal-head .modal-x:hover { background: var(--row-hover); color: var(--text); }
+  .modal-body { padding: 16px 18px; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
+  .modal-body label { font-size: 12px; color: var(--muted); font-weight: 600; letter-spacing: .3px; }
+  .modal-body textarea {
+    width: 100%; min-height: 150px; resize: vertical; padding: 12px 14px;
+    border-radius: 10px; border: 1px solid var(--border); background: var(--surface-solid);
+    color: var(--text); font-size: 14px; line-height: 1.8; font-family: var(--reader-font, system-ui, sans-serif);
+  }
+  .modal-body textarea:focus { outline: 2px solid var(--glow); border-color: transparent; }
+  .modal-body textarea[readonly] { background: color-mix(in srgb, var(--surface-solid) 88%, var(--accent) 6%); }
+  .modal-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .modal-actions .sl-stat { margin-left: auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .btn-primary {
+    padding: 8px 16px; border-radius: 9px; font-weight: 600; cursor: pointer; border: none;
+    background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff;
+    box-shadow: 0 8px 22px -10px var(--glow);
+  }
+  .btn-primary:hover { filter: brightness(1.06); }
+  .modal-actions > button:not(.btn-primary) {
+    padding: 8px 14px; border-radius: 9px; border: 1px solid var(--border);
+    background: transparent; color: var(--text); cursor: pointer; font-size: 13px;
+  }
+  .modal-actions > button:not(.btn-primary):hover { background: var(--row-hover); }
+  @media (max-width: 560px) {
+    .modal-card { max-height: 94vh; }
+    .modal-body textarea { min-height: 110px; }
+  }
+
   /* 窄屏：侧栏浮层 */
   @media (max-width: 860px) {
     .sidebar { position: fixed; left: 16px; top: 86px; bottom: 86px; z-index: 40;
@@ -436,6 +487,9 @@
       <div class="ctrl">
         <button class="btn-ghost" id="readModeBtn" title="进入纯净阅读模式 (R)">📖 纯净阅读</button>
       </div>
+      <div class="ctrl">
+        <button class="btn-ghost" id="simpleLayoutBtn" title="简单排版 · 按句分段">✒ 简单排版</button>
+      </div>
     </header>
 
     <!-- 主体 -->
@@ -556,6 +610,27 @@
         </span>
       </div>
       </main>
+
+      <!-- 简单排版弹窗：按句分段 -->
+      <div class="modal-mask" id="slMask" hidden>
+        <div class="modal-card" id="slCard" role="dialog" aria-modal="true" aria-label="简单排版">
+          <div class="modal-head">✒ 简单排版 · 按句分段<span class="modal-x" id="slClose" role="button" title="关闭" aria-label="关闭">✕</span></div>
+          <div class="modal-body">
+            <label for="slInput">原文（大段连续文字）</label>
+            <textarea id="slInput" placeholder="粘贴或输入大段连续文字，输入即实时按句分段…"></textarea>
+            <div class="modal-actions">
+              <button class="btn-primary" id="slRun" type="button">重新排版</button>
+              <button id="slClear" type="button">清空</button>
+              <span class="sl-stat" id="slStat"></span>
+            </div>
+            <label for="slOutput">排版结果（每句一段，段间空行；连续短对话不空行）</label>
+            <textarea id="slOutput" readonly placeholder="排版后的文本将显示在这里，可一键复制…"></textarea>
+            <div class="modal-actions">
+              <button class="btn-primary" id="slCopy" type="button">复制结果</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- 状态栏 -->
@@ -852,6 +927,46 @@
     return Math.min(ans, state.visualRows.length - 1);
   }
   function escapeHtml(s) { return s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+
+  /* ---------- 简单排版：按句分段 ---------- */
+  // 句子结束标点（中文句号/问号/感叹号、英文 .?!、中文省略号 …）
+  const SENT_END = new Set(['。', '？', '?', '！', '!', '…']);
+  const SHORT_SENT = 6;    // 短句阈值（字符数，含标点）：≤ 此值的连续短句视为对话，合并到同一段（不空行）
+  // 按句子结束标点切分，保留标点；句子内空白压成单空格。返回句子数组（已 trim、去空）。
+  function splitSentences(text) {
+    const lines = (text || '').replace(/\r\n?/g, '\n').split('\n');
+    const re = /[^。？！.!?…]*[。？！.!?…]+/g;   // 行内按句结束标点切分（行已无换行，故无需排除 \n）
+    const out = [];
+    for (const line of lines) {
+      if (!line.trim()) continue;                  // 空行跳过
+      let m, lastEnd = 0;
+      while ((m = re.exec(line)) !== null) { out.push(m[0]); lastEnd = m.index + m[0].length; }
+      const rest = line.slice(lastEnd);            // 行尾无结束标点的残句
+      if (rest.trim()) out.push(rest.trim());
+    }
+    return out
+      .map(s => s.replace(/\s+/g, ' ').trim())      // 句子内多空格 → 单空格
+      .filter(s => s.length > 0);
+  }
+  // 排版：每句一段；段间空行；连续短句（≤ SHORT_SENT）视为对话，合并同一段不空行。
+  function simpleLayout(text) {
+    const sents = splitSentences(text);
+    if (!sents.length) return '';
+    const paras = [];
+    let buf = [];
+    for (let i = 0; i < sents.length; i++) {
+      const s = sents[i];
+      buf.push(s);
+      const isShort = s.length <= SHORT_SENT;
+      const next = sents[i + 1];
+      const nextShort = next ? next.length <= SHORT_SENT : false;
+      const lastOne = !next;
+      // 本句作为段落结尾：最后一句，或“非连续短句”边界（当前或下一句有一个不是短句）
+      const breakAfter = lastOne || !(isShort && nextShort);
+      if (breakAfter) { paras.push(buf.join('')); buf = []; }
+    }
+    return paras.join('\n\n');
+  }
 
   let ticking = false;
   function render() {
@@ -1603,6 +1718,47 @@
   window.addEventListener('pagehide', flushSave);
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushSave(); });
   updateRestoreBtn();   // 初始（无文件）禁用「恢复进度」按钮
+
+  /* ---------- 简单排版弹窗 ---------- */
+  const simpleLayoutBtn = $('simpleLayoutBtn');
+  const slMask = $('slMask');
+  const slInput = $('slInput');
+  const slOutput = $('slOutput');
+  const slStat = $('slStat');
+  function runSimpleLayout() {
+    const src = slInput.value;
+    const out = simpleLayout(src);
+    slOutput.value = out;
+    const sents = splitSentences(src);
+    slStat.textContent = src.trim() ? ('共 ' + sents.length + ' 句 · ' + out.split('\n\n').filter(Boolean).length + ' 段') : '';
+  }
+  let slTimer = null;
+  function fallbackCopy(t) {
+    try {
+      slOutput.removeAttribute('readonly');
+      slOutput.select();
+      document.execCommand('copy');
+      slOutput.setAttribute('readonly', '');
+      showToast('已复制排版结果');
+    } catch (e) { showToast('复制失败，请手动选择'); }
+  }
+  simpleLayoutBtn.addEventListener('click', () => { slMask.hidden = false; slInput.focus(); runSimpleLayout(); });
+  $('slClose').addEventListener('click', () => { slMask.hidden = true; });
+  slMask.addEventListener('click', (e) => { if (e.target === slMask) slMask.hidden = true; });
+  slInput.addEventListener('input', () => {
+    if (slTimer) clearTimeout(slTimer);
+    slTimer = setTimeout(runSimpleLayout, 120);
+  });
+  $('slRun').addEventListener('click', runSimpleLayout);
+  $('slClear').addEventListener('click', () => { slInput.value = ''; slOutput.value = ''; slStat.textContent = ''; slInput.focus(); });
+  $('slCopy').addEventListener('click', () => {
+    const txt = slOutput.value;
+    if (!txt) { showToast('没有可复制的内容'); return; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).then(() => showToast('已复制排版结果')).catch(() => fallbackCopy(txt));
+    } else { fallbackCopy(txt); }
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !slMask.hidden) slMask.hidden = true; });
 
   // 翻页速度（间隔秒数）调节
   speedInput.addEventListener('input', () => {
