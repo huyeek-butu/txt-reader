@@ -1853,49 +1853,9 @@
   applyReadingSettings();   // 初始化变量与控件高亮（即使未进入纯读也预设好）
 
   /* ---------- 事件绑定 ---------- */
-  // 文件/文件夹选择：优先走 File System Access API（系统弹出普通「打开 / 选择文件夹」对话框，
-  // 无「上传」字样，避免歧义）；不支持的浏览器（Firefox/Safari 等）回退到隐藏 input（文案由浏览器控制，无法更改）。
-  async function openFilesViaFsa() {
-    const handles = await window.showOpenFilePicker({
-      multiple: true,
-      types: [{ description: '文本文件 (TXT)', accept: { 'text/plain': ['.txt'] } }],
-    });
-    const files = await Promise.all(handles.map(h => h.getFile()));
-    addFiles(files);
-  }
-  async function openFolderViaFsa() {
-    const dir = await window.showDirectoryPicker();
-    const files = [];
-    async function walk(dirHandle, prefix) {
-      for await (const entry of dirHandle.values()) {
-        if (entry.kind === 'file') {
-          if (/\.txt$/i.test(entry.name)) {
-            const f = await entry.getFile();
-            // 轻量包装：webkitRelativePath 保留「根文件夹/子路径/文件名」语义，与原 webkitdirectory 一致
-            files.push({
-              name: f.name,
-              type: f.type,
-              webkitRelativePath: prefix ? prefix + '/' + f.name : f.name,
-              arrayBuffer: () => f.arrayBuffer(),
-            });
-          }
-        } else if (entry.kind === 'directory') {
-          await walk(entry, prefix ? prefix + '/' + entry.name : entry.name);
-        }
-      }
-    }
-    await walk(dir, dir.name);
-    addFiles(files);
-  }
-  openBtn.addEventListener('click', () => {
-    if (typeof window.showOpenFilePicker === 'function') openFilesViaFsa().catch(() => {});   // 取消选择不报错
-    else fileInput.click();
-  });
-  openFolderBtn.addEventListener('click', () => {
-    if (typeof window.showDirectoryPicker === 'function') openFolderViaFsa().catch(() => {});
-    else folderInput.click();
-  });
+  openBtn.addEventListener('click', () => fileInput.click());
   fileInput.addEventListener('change', (e) => { if (e.target.files) addFiles(e.target.files); fileInput.value = ''; });
+  openFolderBtn.addEventListener('click', () => folderInput.click());
   folderInput.addEventListener('change', (e) => { if (e.target.files) addFiles(e.target.files); folderInput.value = ''; });
   clearFilesBtn.addEventListener('click', clearAllFiles);
 
