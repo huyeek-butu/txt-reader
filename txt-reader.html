@@ -1006,7 +1006,20 @@
       return paras.join('\n\n');
     }
 
-    return { SENT_END, SHORT_SENT, splitSentences, simpleLayout };
+    // 长标点（破折号 ——、省略号 ……）作为段落分隔符，与换行符同等处理。
+    const LONG_PUNCT = /[—…]+/g;   // 连续的破折号/省略号串视为一段分隔边界
+    // 按长标点切分段落：长标点串替换为换行（与换行符同等参与分段），按换行切段，
+    // 去除每段首尾多余空白，剔除空段。返回独立段落数组。
+    function segmentByLongPunct(text) {
+      if (text == null) return [];
+      let t = text.replace(/\r\n?/g, '\n');
+      t = t.replace(LONG_PUNCT, '\n');        // 长标点串 → 段落边界
+      return t.split('\n')
+        .map(s => s.trim())                    // 去除段落首尾多余空白
+        .filter(s => s.length > 0);            // 剔除空段
+    }
+
+    return { SENT_END, SHORT_SENT, splitSentences, simpleLayout, segmentByLongPunct };
   })();
 
   let ticking = false;
