@@ -415,10 +415,13 @@
         <label>字号</label>
         <select id="fontSelect">
           <option value="14">14px</option>
-          <option value="16" selected>16px</option>
+          <option value="16">16px</option>
           <option value="18">18px</option>
           <option value="20">20px</option>
-          <option value="24">24px</option>
+          <option value="24" selected>24px</option>
+          <option value="28">28px</option>
+          <option value="32">32px</option>
+          <option value="36">36px</option>
         </select>
       </div>
       <div class="ctrl">
@@ -676,7 +679,7 @@
     lines: [], lineHeights: [], offsets: [], totalHeight: 0,
     visualRows: [],       // { text, lineIndex, rowIndex, start, end } 真实显示行
     lineFirstVisualRow: [], // 逻辑行 -> 首个视觉行索引
-    maxTextWidth: 0, gutter: 60, fontSize: 16, lineHeight: 29,
+    maxTextWidth: 0, gutter: 60, fontSize: 24, lineHeight: 44,
     fontFamily: '"Segoe UI", system-ui, -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif',
     wrap: true, fileName: '', filePath: '', fileId: '', charCount: 0, pages: []
   };
@@ -1486,7 +1489,7 @@
       if (state.bytes) { computeLayout(); render(); refreshSearchAfterLayout(); }
     } else {
       document.body.classList.remove('reading-mode');
-      state.fontSize = parseInt(fontSelect.value, 10) || 16;
+      state.fontSize = parseInt(fontSelect.value, 10) || 24;
       state.fontFamily = READ_FONTS.sans;
       state.lineHeight = Math.round(state.fontSize * 1.8);
       if (readBar) readBar.hidden = true;
