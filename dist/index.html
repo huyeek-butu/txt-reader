@@ -986,28 +986,33 @@
         .filter(s => s.length > 0);
     }
 
-    // 排版：每句一段；段间空行；连续短句（≤ SHORT_SENT）视为对话，合并同一段不空行。
+    // 排版：长标点串（——/……等）与换行符同等视为段落边界，块间强制分段；
+    // 块内每句一段、段间空行，连续短句（≤ SHORT_SENT）视为对话，合并同一段不空行。
     function simpleLayout(text) {
-      const sents = splitSentences(text);
-      if (!sents.length) return '';
+      const blocks = (text || '').split(LONG_PUNCT);   // 长标点 → 强制段落边界（长标点串本身被剔除）
       const paras = [];
-      let buf = [];
-      for (let i = 0; i < sents.length; i++) {
-        const s = sents[i];
-        buf.push(s);
-        const isShort = s.length <= SHORT_SENT;
-        const next = sents[i + 1];
-        const nextShort = next ? next.length <= SHORT_SENT : false;
-        const lastOne = !next;
-        // 本句作为段落结尾：最后一句，或“非连续短句”边界（当前或下一句有一个不是短句）
-        const breakAfter = lastOne || !(isShort && nextShort);
-        if (breakAfter) { paras.push(buf.join('')); buf = []; }
+      for (const block of blocks) {
+        const sents = splitSentences(block);           // 块内照旧：换行清洗 + 按句分段
+        if (!sents.length) continue;
+        let buf = [];
+        for (let i = 0; i < sents.length; i++) {
+          const s = sents[i];
+          buf.push(s);
+          const isShort = s.length <= SHORT_SENT;
+          const next = sents[i + 1];
+          const nextShort = next ? next.length <= SHORT_SENT : false;
+          const lastOne = !next;
+          // 本句作为段落结尾：最后一句，或“非连续短句”边界（当前或下一句有一个不是短句）
+          const breakAfter = lastOne || !(isShort && nextShort);
+          if (breakAfter) { paras.push(buf.join('')); buf = []; }
+        }
       }
       return paras.join('\n\n');
     }
 
-    // 长标点（破折号 ——、省略号 ……）作为段落分隔符，与换行符同等处理。
-    const LONG_PUNCT = /[—…]+/g;   // 连续的破折号/省略号串视为一段分隔边界
+    // 长标点串（破折号 ——、省略号 …… 及其连排，含各类横线变体）作为段落分隔符。
+    // 横线类需连排 ≥2 个才视为分隔（单个 - 或 — 可能是正常字符）；省略号同样需连排 ≥2。
+    const LONG_PUNCT = /[—―‒–﹘－─-]{2,}|[…⋯]{2,}/g;
     // 按长标点切分段落：长标点串替换为换行（与换行符同等参与分段），按换行切段，
     // 去除每段首尾多余空白，剔除空段。返回独立段落数组。
     function segmentByLongPunct(text) {
