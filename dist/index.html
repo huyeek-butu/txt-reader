@@ -169,13 +169,27 @@
   .reader-col { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 14px; }
   .reader-wrap {
     flex: 1 1 auto; min-height: 0; position: relative;
+    display: flex; flex-direction: column;
     background: var(--surface); backdrop-filter: blur(18px) saturate(160%);
     -webkit-backdrop-filter: blur(18px) saturate(160%);
     border: 1px solid var(--border); border-radius: var(--radius);
     box-shadow: 0 18px 50px -28px var(--glow); overflow: hidden;
     transition: background-color .4s var(--ease), border-color .4s var(--ease);
   }
-  .viewport { position: relative; height: 100%; width: 100%; overflow: auto; scroll-behavior: auto; }
+  .viewport { position: relative; flex: 1 1 auto; min-height: 0; height: auto; width: 100%; overflow: auto; scroll-behavior: auto; }
+  /* 换行边界标尺（主窗口顶端，可拖动 ▼） */
+  .ruler {
+    flex: 0 0 auto; position: relative; height: 26px; overflow: hidden;
+    background: var(--surface-solid); border-bottom: 1px solid var(--border);
+    cursor: ew-resize; user-select: none; -webkit-user-select: none;
+  }
+  .ruler canvas { position: absolute; inset: 0; display: block; }
+  body.nowrap .ruler, body.reading-mode .ruler { display: none; }
+  /* 正文区换行边界虚线（视觉辅助） */
+  #wrapGuide {
+    position: absolute; top: 0; width: 0; pointer-events: none; z-index: 6; display: none;
+    border-left: 1px dashed var(--text); opacity: .35;
+  }
   .viewport::-webkit-scrollbar { width: 12px; height: 12px; }
   .viewport::-webkit-scrollbar-thumb { background: var(--glow); border-radius: 10px; border: 3px solid transparent; background-clip: content-box; }
   .viewport::-webkit-scrollbar-track { background: transparent; }
@@ -538,9 +552,13 @@
       <!-- 阅读列 -->
       <main class="reader-col">
         <div class="reader-wrap">
+          <div class="ruler" id="wrapRuler" title="换行边界标尺：按住拖动 ▼ 调整列位置（拖动中不重排），松开鼠标后正文按新边界换行；双击恢复自动宽度">
+            <canvas id="rulerCanvas"></canvas>
+          </div>
           <div class="viewport" id="viewport">
             <div id="spacer"></div>
             <div id="content"></div>
+            <div id="wrapGuide"></div>
           </div>
           <div class="empty" id="empty">
             <div class="help-card">
@@ -761,7 +779,8 @@
     maxTextWidth: 0, gutter: 60, fontSize: 24, lineHeight: 44,
     fontFamily: '"Segoe UI", system-ui, -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif',
     wrap: true, fileName: '', filePath: '', fileId: '', charCount: 0, pages: [],
-    layoutEnabled: true   // 主窗口正文是否套用「简单排版」同一规则（按句分段）
+    layoutEnabled: true,  // 主窗口正文是否套用「简单排版」同一规则（按句分段）
+    wrapCol: 0            // 标尺换行边界列数（0 = 自动·视口宽度；>0 = 正文按此列位置换行）
   };
 
   /* ---------- 测量 canvas ---------- */
@@ -870,6 +889,12 @@
     const padX = isRead ? (window.readPadPx || 0) : 16;       // 单侧内边距（普通模式 .tx 为 16px）
     const gutterForWidth = isRead ? 0 : state.gutter;        // 纯读下行号隐藏，宽度不占 gutter
     const contentWidth = Math.max(40, (vw - gutterForWidth - padX * 2) * 0.96 - 12);
+    // 标尺换行边界：wrapCol>0 时正文按标尺所指列位置换行（列宽按全角字宽估算）
+    let effWidth = contentWidth;
+    if (state.wrap && state.wrapCol > 0) {
+      const unit = Math.max(8, textWidth('字'));
+      effWidth = Math.max(40, Math.min(contentWidth, Math.round(state.wrapCol * unit)));
+    }
 
     // 生成真实显示行（视觉行）
     state.visualRows = [];
@@ -882,7 +907,7 @@
         const w = textWidth(line);
         if (w > maxW) maxW = w;
       }
-      const wrapped = state.wrap ? wrapText(line, contentWidth) : [line];
+      const wrapped = state.wrap ? wrapText(line, effWidth) : [line];
       state.lineFirstVisualRow[i] = vri;
       charPos = 0;
       for (let r = 0; r < wrapped.length; r++) {
@@ -907,6 +932,8 @@
     content.style.width = fullWidth + 'px';
     stLines.textContent = totalV.toLocaleString();   // 状态栏显示真实显示行总数
     buildPages();
+    drawRuler();          // 标尺随布局重绘（宽度/边界标记同步）
+    updateWrapGuide();    // 边界虚线同步
   }
 
   /* ---------- 分页（基于视觉行，两行重叠衔接） ---------- */
@@ -931,6 +958,122 @@
     if (pages[pages.length - 1] !== lastStart) pages.push(lastStart);
     state.pages = pages;
   }
+
+  /* ---------- 换行边界标尺（主窗口顶端，可拖动） ---------- */
+  const rulerEl = $('wrapRuler');
+  const rulerCanvas = $('rulerCanvas');
+  const rctx = rulerCanvas.getContext('2d');
+  const wrapGuide = $('wrapGuide');
+  const RULER_H = 26;
+  let rulerDrag = false;   // 拖动中：仅移动标记与边界虚线，不同步重排；松开后才生效
+
+  try { state.wrapCol = parseInt(localStorage.getItem('txtreader-wrapcol'), 10) || 0; } catch (e) {}
+  function persistWrapCol() { try { localStorage.setItem('txtreader-wrapcol', String(state.wrapCol)); } catch (e) {} }
+
+  // 标尺几何：unit = 全角字宽（列宽）；contentLeft = 正文起点 x；maxCols = 视口自然宽度对应列数
+  function rulerGeo() {
+    mctx.font = state.fontSize + 'px ' + state.fontFamily;
+    const unit = Math.max(8, textWidth('字'));
+    const vw = viewport.clientWidth;
+    const isRead = document.body.classList.contains('reading-mode');
+    const padX = isRead ? (window.readPadPx || 0) : 16;
+    const gutterForWidth = isRead ? 0 : state.gutter;
+    const natural = Math.max(40, (vw - gutterForWidth - padX * 2) * 0.96 - 12);
+    return { unit, vw, contentLeft: gutterForWidth + padX, maxCols: Math.max(8, Math.floor(natural / unit)) };
+  }
+  function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+  // 绘制标尺：每列小刻度 / 每 5 列中刻度 / 每 10 列大刻度+数字 + ▼ 边界标记 + 实时列数提示
+  function drawRuler(dragCol) {
+    const hidden = !state.bytes || !state.wrap || document.body.classList.contains('reading-mode');
+    rulerEl.style.display = hidden ? 'none' : '';
+    if (hidden) { wrapGuide.style.display = 'none'; return; }
+    const w = rulerEl.clientWidth, h = RULER_H;
+    const dpr = window.devicePixelRatio || 1;
+    if (rulerCanvas.width !== Math.round(w * dpr) || rulerCanvas.height !== Math.round(h * dpr)) {
+      rulerCanvas.width = Math.round(w * dpr); rulerCanvas.height = Math.round(h * dpr);
+      rulerCanvas.style.width = w + 'px'; rulerCanvas.style.height = h + 'px';
+    }
+    rctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    rctx.clearRect(0, 0, w, h);
+    const g = rulerGeo();
+    const cText = cssVar('--text') || '#888', cMuted = cssVar('--muted') || '#999';
+    const base = h - 6;
+    for (let col = 0; col <= g.maxCols; col++) {
+      const x = Math.round(g.contentLeft + col * g.unit) + 0.5;
+      if (x > w) break;
+      const major = col % 10 === 0, mid = col % 5 === 0;
+      rctx.strokeStyle = cText; rctx.globalAlpha = major ? 0.75 : (mid ? 0.45 : 0.25);
+      rctx.lineWidth = 1;
+      rctx.beginPath(); rctx.moveTo(x, base); rctx.lineTo(x, base - (major ? 9 : mid ? 6 : 3.5)); rctx.stroke();
+      if (major && col > 0 && g.unit * 10 >= 34) {       // 大刻度数字（间距足够才显示）
+        rctx.globalAlpha = 0.8; rctx.fillStyle = cMuted;
+        rctx.font = '10px system-ui, sans-serif'; rctx.textAlign = 'center';
+        rctx.fillText(String(col), x, base - 12);
+      }
+    }
+    rctx.globalAlpha = 1;
+    // ▼ 边界标记：拖动中实时跟随光标；未拖动时显示当前生效边界
+    const boundCol = dragCol !== undefined ? dragCol : (state.wrapCol > 0 ? Math.min(state.wrapCol, g.maxCols) : g.maxCols);
+    const mx = Math.round(g.contentLeft + boundCol * g.unit) + 0.5;
+    rctx.fillStyle = '#e5484d';
+    rctx.beginPath();
+    rctx.moveTo(mx - 6, h - 1); rctx.lineTo(mx + 6, h - 1); rctx.lineTo(mx, h - 10);
+    rctx.closePath(); rctx.fill();
+    rctx.strokeStyle = '#e5484d'; rctx.globalAlpha = 0.9;
+    rctx.beginPath(); rctx.moveTo(mx, 2); rctx.lineTo(mx, h - 1); rctx.stroke();
+    rctx.globalAlpha = 1;
+    // 实时边界提示文字
+    const label = dragCol !== undefined ? ('第 ' + boundCol + ' 列 · 松开生效')
+      : (state.wrapCol > 0 ? ('边界 ' + state.wrapCol + ' 列') : ('自动 · ' + g.maxCols + ' 列'));
+    rctx.font = '11px system-ui, sans-serif'; rctx.textAlign = 'left';
+    const lx = Math.max(6, Math.min(mx + 9, w - rctx.measureText(label).width - 6));
+    rctx.fillStyle = cText; rctx.globalAlpha = 0.9;
+    rctx.fillText(label, lx, 11);
+    rctx.globalAlpha = 1;
+  }
+
+  // 正文区换行边界虚线（随拖动实时移动，视觉预告断行位置）
+  function updateWrapGuide(dragCol) {
+    const col = dragCol !== undefined ? dragCol : state.wrapCol;
+    if (!state.bytes || !state.wrap || !(col > 0) || document.body.classList.contains('reading-mode')) {
+      wrapGuide.style.display = 'none'; return;
+    }
+    const g = rulerGeo();
+    wrapGuide.style.display = '';
+    wrapGuide.style.left = (g.contentLeft + Math.min(col, g.maxCols) * g.unit) + 'px';
+    wrapGuide.style.height = Math.max(state.totalHeight, viewport.clientHeight) + 'px';
+  }
+
+  // 拖动交互：mousedown/mousemove 只更新标记与虚线；mouseup 才按新边界重排正文
+  function rulerColFromEvent(e) {
+    const rect = rulerEl.getBoundingClientRect();
+    const g = rulerGeo();
+    return Math.max(1, Math.min(Math.round((e.clientX - rect.left - g.contentLeft) / g.unit), g.maxCols));
+  }
+  rulerEl.addEventListener('mousedown', e => {
+    if (e.button !== 0 || !state.bytes || !state.wrap) return;
+    e.preventDefault();
+    rulerDrag = true;
+    const col = rulerColFromEvent(e);
+    drawRuler(col); updateWrapGuide(col);
+  });
+  window.addEventListener('mousemove', e => {
+    if (!rulerDrag) return;
+    const col = rulerColFromEvent(e);
+    drawRuler(col); updateWrapGuide(col);
+  });
+  window.addEventListener('mouseup', e => {
+    if (!rulerDrag) return;
+    rulerDrag = false;
+    state.wrapCol = rulerColFromEvent(e);
+    persistWrapCol();
+    computeLayout(); render(); refreshSearchAfterLayout();   // 松开：按新边界重排
+  });
+  rulerEl.addEventListener('dblclick', () => {   // 双击恢复自动（视口宽度）
+    state.wrapCol = 0; persistWrapCol();
+    computeLayout(); render(); refreshSearchAfterLayout();
+  });
 
   /* ---------- 虚拟滚动 ---------- */
   function lowerBound(y) {
@@ -1561,6 +1704,7 @@
     }
     [...themeSeg.children].forEach(b => b.classList.toggle('active', b.dataset.theme === t));
     try { localStorage.setItem('txtreader-theme', t); } catch (e) {}
+    drawRuler();   // 标尺配色跟随主题
   }
 
   /* ---------- 纯净阅读模式 ---------- */
