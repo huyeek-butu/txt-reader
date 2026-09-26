@@ -934,7 +934,21 @@
   const SHORT_SENT = 6;    // 短句阈值（字符数，含标点）：≤ 此值的连续短句视为对话，合并到同一段（不空行）
   // 按句子结束标点切分，保留标点；句子内空白压成单空格。返回句子数组（已 trim、去空）。
   function splitSentences(text) {
-    const lines = (text || '').replace(/\r\n?/g, '\n').split('\n');
+    let t = (text || '').replace(/\r\n?/g, '\n');
+    // 断句前：清除“非句末标点后的换行”，确保同一句不被换行断开。
+    // 仅当换行前一个字符为句末标点时保留（视为句/段边界），否则删除；
+    // 英文词中断行（前后均为字母/数字）补一个空格，避免单词粘连。
+    t = t.replace(/\n/g, (m, off) => {
+      const prev = off > 0 ? t[off - 1] : '';
+      const next = off + 1 < t.length ? t[off + 1] : '';
+      if (SENT_END.has(prev)) return '\n';   // 句末 → 保留为边界
+      // 删除换行但需避免粘连：前为字母/数字或逗号、后为字母/数字时补空格（英文词/逗号后断行）
+      const prevWord = /[A-Za-z0-9]/.test(prev) || prev === ',' || prev === '，';
+      const nextWord = /[A-Za-z0-9]/.test(next);
+      if (prevWord && nextWord && prev !== ' ' && prev !== '\t') return ' ';
+      return '';
+    }).replace(/\n{2,}/g, '\n');   // 多个换行压成单换行，空行不再干扰断句
+    const lines = t.split('\n');
     const re = /[^。？！.!?…]*[。？！.!?…]+/g;   // 行内按句结束标点切分（行已无换行，故无需排除 \n）
     const out = [];
     for (const line of lines) {
