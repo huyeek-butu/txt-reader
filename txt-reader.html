@@ -228,6 +228,7 @@
   .help-section ul { margin: 0; padding-left: 18px; }
   .help-section li { margin-bottom: 3px; }
   .help-kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 24px; padding: 2px 7px; font-size: 11px; font-weight: 600; font-family: inherit; background: var(--surface-solid); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 2px 0 var(--border); color: var(--text); margin: 0 1px; }
+  .help-card code { padding: 1px 6px; font-size: 12px; font-family: ui-monospace, Consolas, monospace; background: var(--surface-solid); border: 1px solid var(--border); border-radius: 5px; color: var(--text); }
   .help-grid { display: grid; grid-template-columns: repeat(2, auto 1fr); gap: 8px 20px; font-size: 13px; line-height: 1.6; }
   .help-grid .key { color: var(--muted); text-align: right; white-space: nowrap; display: flex; align-items: center; gap: 4px; }
   .help-grid .act { color: var(--text); display: flex; align-items: center; }
@@ -565,12 +566,12 @@
               <div class="help-header">
                 <div class="help-icon">📄</div>
                 <div class="help-title">TXT 阅读器</div>
-                <div class="help-version">v1.0</div>
+                <div class="help-version">v1.8</div>
               </div>
 
               <div class="help-section">
                 <h3>📌 项目简介</h3>
-                <p>一款浏览器端的 TXT 阅读工具，专为中文小说、日志、剧本等长文本设计。支持 GBK / Big5 / UTF-8 自动识别，按真实显示行分页，提供关键词搜索、纯净阅读模式、护眼主题与快捷键操作，让阅读回归沉浸。</p>
+                <p>一款浏览器端的 TXT 阅读工具，专为中文小说、日志、剧本等长文本设计。支持 GBK / Big5 / UTF-8 自动识别，按真实显示行分页，提供通配符搜索、按句分段排版、可拖动换行标尺、纯净阅读模式、护眼主题与快捷键操作，让阅读回归沉浸。</p>
               </div>
 
               <div class="help-section">
@@ -578,9 +579,12 @@
                 <ul>
                   <li><strong>自动编码识别</strong>：智能检测 GBK / Big5 / UTF-8，也可手动切换。</li>
                   <li><strong>真实显示行分页</strong>：按实际折行后的视觉行计算页码，翻页精准。</li>
-                  <li><strong>关键词搜索定位</strong>：支持循环跳转、正文内联高亮、显示第 X/N 个匹配。</li>
+                  <li><strong>通配符搜索定位</strong>：<code>*</code> 匹配任意长度、<code>?</code> 匹配单字符；支持循环跳转、正文内联高亮、第 X/N 个匹配。</li>
+                  <li><strong>简单排版 · 按句分段</strong>：主窗口正文与「✒ 简单排版」弹窗共用同一规则——每句一段、段间空行、连续短对话合并不空行；逗号等非句末标点后的换行自动合并；破折号 —— / 省略号 …… 连排作强制分段。</li>
+                  <li><strong>换行边界标尺</strong>：窗口顶端 Word 式标尺，拖动设定换行列边界，松开生效、双击恢复自动。</li>
+                  <li><strong>进度自动保存</strong>：多文件独立记忆阅读位置，内容指纹防串档，一键恢复。</li>
                   <li><strong>纯净阅读模式</strong>：一键隐藏 UI，自定义字号、字体、宽度与背景色。</li>
-                  <li><strong>护眼主题</strong>：明亮暖纸感 / 暗色非纯黑柔对比，明暗一键切换。</li>
+                  <li><strong>护眼主题</strong>：明亮暖纸感 / 暗色非纯黑柔对比，明暗一键切换，跟随系统。</li>
                   <li><strong>自动翻页</strong>：可设定 15–90 秒/页，空格启停。</li>
                 </ul>
               </div>
@@ -606,9 +610,11 @@
                 <h3>🚀 基本操作</h3>
                 <ul>
                   <li>点击顶栏「<strong>打开文件</strong>」或「<strong>打开文件夹</strong>」载入 TXT。</li>
-                  <li>在左侧「文件列表」切换文件，在「搜索定位」输入关键词并按回车或搜索按钮跳转。</li>
-                  <li>在顶栏可调整编码、换行、字号、主题，点击「📖 纯净阅读」进入沉浸模式。</li>
-                  <li>在纯净阅读模式下，可调整字号、字体、页面宽度与背景色，按 R 或 Esc 退出。</li>
+                  <li>在左侧「文件列表」切换文件；「搜索定位」与文件搜索均支持 <code>*</code> / <code>?</code> 通配符。</li>
+                  <li>在顶栏可调整编码、换行、字号（14–36px）、主题；点「✒ 正文排版」切换正文按句分段。</li>
+                  <li>「✒ 简单排版」弹窗可粘贴大段文字实时按句分段，并一键复制结果。</li>
+                  <li>拖动正文顶端<strong>标尺</strong>设定换行边界（松开生效），双击恢复自动。</li>
+                  <li>点击「📖 纯净阅读」进入沉浸模式，可调整字号、字体、页面宽度与背景色，按 R 或 Esc 退出。</li>
                   <li>阅读进度会<strong>自动保存</strong>；需要时点击翻页栏「<strong>↺ 恢复进度</strong>」回到上次阅读位置。</li>
                 </ul>
               </div>
