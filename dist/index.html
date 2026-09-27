@@ -566,7 +566,7 @@
               <div class="help-header">
                 <div class="help-icon">📄</div>
                 <div class="help-title">TXT 阅读器</div>
-                <div class="help-version">v1.8</div>
+                <div class="help-version">v1.9</div>
               </div>
 
               <div class="help-section">
@@ -581,6 +581,7 @@
                   <li><strong>真实显示行分页</strong>：按实际折行后的视觉行计算页码，翻页精准。</li>
                   <li><strong>通配符搜索定位</strong>：<code>*</code> 匹配任意长度、<code>?</code> 匹配单字符；支持循环跳转、正文内联高亮、第 X/N 个匹配。</li>
                   <li><strong>简单排版 · 按句分段</strong>：主窗口正文与「✒ 简单排版」弹窗共用同一规则——每句一段、段间空行、连续短对话合并不空行；逗号等非句末标点后的换行自动合并；破折号 —— / 省略号 …… 连排作强制分段。</li>
+                  <li><strong>连续标点组合处理</strong>：<code>！！</code> <code>？！</code> <code>。。</code> 等连排／混排视为一个句末边界，原样保留不折叠；句末标点后的收尾引号括号（<code>！”</code> <code>。</code> <code>……”</code>）归入前一句，不会另起一行或被切到下一句首。</li>
                   <li><strong>换行边界标尺</strong>：窗口顶端 Word 式标尺，拖动设定换行列边界，松开生效、双击恢复自动。</li>
                   <li><strong>进度自动保存</strong>：多文件独立记忆阅读位置，内容指纹防串档，一键恢复。</li>
                   <li><strong>纯净阅读模式</strong>：一键隐藏 UI，自定义字号、字体、宽度与背景色。</li>
@@ -1103,17 +1104,37 @@
     // 句子结束标点（中文句号/问号/感叹号、英文 .?!、中文省略号 …）
     const SENT_END = new Set(['。', '？', '?', '！', '!', '…']);
     const SHORT_SENT = 6;    // 短句阈值（字符数，含标点）：≤ 此值的连续短句视为对话，合并到同一段（不空行）
+    /* ---------- 连续标点组合的处理规则 ----------
+     * ① 句末标点串：上述句末标点的任意连续混排（如 ！！、？！、!?、。。。）视为**一个**句末边界，
+     *    不拆成多句、不折叠、不转换，原样保留在句尾。
+     * ② 收尾符号归属：紧随句末标点串之后的收尾引号/括号类（” ’ " ' 』 」 》 〉 】 ） ) ] ］ ｝）
+     *    一律归入**前一句**，绝不另起一句、也不作为下一句的开头。
+     * ③ 前导符号归属：句首的前引号/前括号（“ ‘ " ' 「 『 《 〈 【 （ ( [ ｛ {）归入该句。
+     * ④ 句边界判定：句末标点串（可含收尾符号）之后才算句边界 —— 换行是否保留、是否断句都用它判断。
+     * ⑤ 不做规范化：不合并不删除、不转换全半角（。。。不改成 ……、！！不改成 ！），保留原文风格。
+     * -------------------------------------------------- */
+    const CLOSE_CHAR = /[”’"'』」》〉】）)\]］｝]/;                                  // 收尾符号（单个）
+    const CLOSE_ONLY = /^[”’"'』」》〉】）)\]］｝\s]+$/;                            // 整段仅由收尾符号构成
+    // 断句：句首任意非句末标点内容 + 句末标点串 + 尾随收尾符号（作为一个完整句末标记）
+    const SPLIT_RE = /[^。？！.!?…]*[。？！.!?…]+[”’"'』」》〉】）)\]］｝]*/g;
 
-    // 按句子结束标点切分，保留标点；句子内空白压成单空格。返回句子数组（已 trim、去空）。
+    // 位置 pos 之前是否构成“句末标记”：先跳过收尾符号，再看是否为句末标点。
+    function endsSentenceAt(text, pos) {
+      let i = pos - 1;
+      while (i >= 0 && CLOSE_CHAR.test(text[i])) i--;   // 收尾符号视为透明（归入前句）
+      return i >= 0 && SENT_END.has(text[i]);
+    }
+
+    // 按句子结束标点切分，保留标点与尾随收尾符号；句子内空白压成单空格。返回句子数组（已 trim、去空）。
     function splitSentences(text) {
       let t = (text || '').replace(/\r\n?/g, '\n');
       // 断句前：清除“非句末标点后的换行”，确保同一句不被换行断开。
-      // 仅当换行前一个字符为句末标点时保留（视为句/段边界），否则删除；
+      // 仅当换行前构成句末标记（句末标点串，允许尾随收尾符号）时保留（视为句/段边界），否则删除；
       // 英文词中断行（前后均为字母/数字）补一个空格，避免单词粘连。
       t = t.replace(/\n/g, (m, off) => {
         const prev = off > 0 ? t[off - 1] : '';
         const next = off + 1 < t.length ? t[off + 1] : '';
-        if (SENT_END.has(prev)) return '\n';   // 句末 → 保留为边界
+        if (endsSentenceAt(t, off)) return '\n';   // 句末（含“！””这类组合）→ 保留为边界
         // 删除换行但需避免粘连：前为字母/数字或逗号、后为字母/数字时补空格（英文词/逗号后断行）
         const prevWord = /[A-Za-z0-9]/.test(prev) || prev === ',' || prev === '，';
         const nextWord = /[A-Za-z0-9]/.test(next);
@@ -1121,14 +1142,17 @@
         return '';
       }).replace(/\n{2,}/g, '\n');   // 多个换行压成单换行，空行不再干扰断句
       const lines = t.split('\n');
-      const re = /[^。？！.!?…]*[。？！.!?…]+/g;   // 行内按句结束标点切分（行已无换行，故无需排除 \n）
       const out = [];
       for (const line of lines) {
         if (!line.trim()) continue;                  // 空行跳过
         let m, lastEnd = 0;
-        while ((m = re.exec(line)) !== null) { out.push(m[0]); lastEnd = m.index + m[0].length; }
-        const rest = line.slice(lastEnd);            // 行尾无结束标点的残句
-        if (rest.trim()) out.push(rest.trim());
+        while ((m = SPLIT_RE.exec(line)) !== null) { out.push(m[0]); lastEnd = m.index + m[0].length; }
+        const rest = line.slice(lastEnd).trim();     // 行尾无结束标点的残句
+        if (rest) {
+          // 残句若仅由收尾符号组成（如长标点分隔后甩出的 ” ）：并入前一句，绝不成为独立句子
+          if (CLOSE_ONLY.test(rest) && out.length) out[out.length - 1] += rest;
+          else out.push(rest);
+        }
       }
       return out
         .map(s => s.replace(/\s+/g, ' ').trim())      // 句子内多空格 → 单空格
@@ -1137,10 +1161,36 @@
 
     // 排版：长标点串（——/……等）与换行符同等视为段落边界，块间强制分段；
     // 块内每句一段、段间空行，连续短句（≤ SHORT_SENT）视为对话，合并同一段不空行。
+    // 标点组合处理：分隔线（装饰性长标点串）剔除；但「句内长标点 + 收尾符号」（如 ……”)）不丢符号——
+    // 若长标点紧邻收尾符号，则长标点与收尾符号一并归入前一段末尾。
     function simpleLayout(text) {
-      const blocks = (text || '').split(LONG_PUNCT);   // 长标点 → 强制段落边界（长标点串本身被剔除）
+      // 用捕获组切分，保留长标点串本身，便于区分「装饰分隔线」与「句内省略号」
+      const parts = (text || '').split(new RegExp('(' + LONG_PUNCT.source + ')'));
       const paras = [];
-      for (const block of blocks) {
+      let pendingSep = '';
+      const appendToPrev = (s) => { if (s && paras.length) paras[paras.length - 1] += s; };
+      for (const part of parts) {
+        if (!part) continue;
+        if (LONG_PUNCT_ONE.test(part)) { pendingSep += part; continue; }   // 分隔符挂起，看下一块是什么再定
+        // 块首的收尾符号（如「……”他说。」被切开后的 ”他说。）→ 归于前一段末尾
+        let block = part;
+        const lead = block.match(/^[”’"'』」》〉】）)\]］｝]+/);
+        if (lead && paras.length) {
+          appendToPrev(pendingSep + lead[0]);   // 长标点紧邻收尾符号：一并保留（不丢 ……）
+          pendingSep = '';
+          block = block.slice(lead[0].length);
+        }
+        if (!block.trim()) continue;
+        // 仅由收尾符号构成的块 → 并入前一段末尾；若无前一段（收尾符号出现在最前），
+        // 为保证不丢字符，与挂起的分隔符一起自成一段
+        if (CLOSE_ONLY.test(block)) {
+          const tail = block.trim();
+          if (paras.length) appendToPrev(pendingSep + tail);
+          else if (tail) paras.push(pendingSep + tail);
+          pendingSep = '';
+          continue;
+        }
+        pendingSep = '';                        // 后接正常文本的长标点串 = 装饰性分隔线 → 剔除（v1.7 规格）
         const sents = splitSentences(block);           // 块内照旧：换行清洗 + 按句分段
         if (!sents.length) continue;
         let buf = [];
@@ -1162,15 +1212,23 @@
     // 长标点串（破折号 ——、省略号 …… 及其连排，含各类横线变体）作为段落分隔符。
     // 横线类需连排 ≥2 个才视为分隔（单个 - 或 — 可能是正常字符）；省略号同样需连排 ≥2。
     const LONG_PUNCT = /[—―‒–﹘－─-]{2,}|[…⋯]{2,}/g;
+    // 单个片段是否整体为长标点串（用于 simpleLayout 的挂起判定）
+    const LONG_PUNCT_ONE = /^(?:[—―‒–﹘－─-]{2,}|[…⋯]{2,})$/;
     // 按长标点切分段落：长标点串替换为换行（与换行符同等参与分段），按换行切段，
     // 去除每段首尾多余空白，剔除空段。返回独立段落数组。
     function segmentByLongPunct(text) {
       if (text == null) return [];
       let t = text.replace(/\r\n?/g, '\n');
       t = t.replace(LONG_PUNCT, '\n');        // 长标点串 → 段落边界
-      return t.split('\n')
-        .map(s => s.trim())                    // 去除段落首尾多余空白
-        .filter(s => s.length > 0);            // 剔除空段
+      const segs = [];
+      for (const raw of t.split('\n')) {
+        const s = raw.trim();                 // 去除段落首尾多余空白
+        if (!s) continue;                     // 剔除空段
+        // 仅由收尾符号构成的段（长标点切开后残留的 ” 等）：并入前一段末尾
+        if (CLOSE_ONLY.test(s) && segs.length) segs[segs.length - 1] += s;
+        else segs.push(s);
+      }
+      return segs;
     }
 
     return { SENT_END, SHORT_SENT, splitSentences, simpleLayout, segmentByLongPunct };

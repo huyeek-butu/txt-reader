@@ -8,7 +8,7 @@
 
 A **browser-based, single-file** TXT reading tool, purpose-built for long-form Chinese content such as novels, logs, and scripts. It auto-detects GBK / Big5 / UTF-8 encodings, paginates by real rendered lines, and offers wildcard search, sentence-based layout, a draggable wrap-boundary ruler, distraction-free reading, eye-care themes, and keyboard shortcuts — bringing you back to immersive reading.
 
-> **v1.8** · Pure front-end · Zero dependencies · Works out of the box
+> **v1.9** · Pure front-end · Zero dependencies · Works out of the box
 
 ---
 
@@ -22,6 +22,12 @@ A browser-based TXT reading tool designed for long-form Chinese content such as 
 - **Real-line pagination**: Calculates page numbers based on actual wrapped visual lines for precise paging.
 - **Wildcard search & locate**: `*` matches any-length sequences and `?` matches a single character — supported in both file search and body-text search; cyclic jumping, inline highlighting, and an "X/N match" counter.
 - **Simple layout · sentence segmentation**: The main reading view and the "✒ Simple Layout" dialog share one layout engine (the `Layout` module) — one sentence per paragraph with blank lines between paragraphs; consecutive short dialogue lines are merged without blank lines; line breaks after non-sentence-ending punctuation (e.g. commas) are automatically joined back into the same sentence; runs of em-dashes `——` / ellipses `……` act as forced paragraph separators.
+- **Consecutive punctuation handling**:
+  - Runs/mixes of sentence-ending punctuation (`！！`, `？！`, `!?`, `。。。`) count as **one** sentence boundary — never split, collapsed, or converted; the original style is preserved;
+  - Closing quotes/brackets right after sentence-ending punctuation (`！”`, `。”`, `……”`, `！”）`) belong to the **previous** sentence — they never form a paragraph of their own or get attached to the start of the next sentence;
+  - Leading quotes/brackets (`“`, `《`, `（`) belong to the sentence that follows;
+  - Sentence-boundary detection (whether a newline is kept, whether to split) uses the same "sentence-ending punctuation run + optional closing marks" rule, so line breaks like `“你好！”\n他走了。` are no longer lost;
+  - Decorative long-punctuation dividers are still removed, but an in-sentence ellipsis with a closing mark (e.g. `……”`) is preserved and re-attached to the previous paragraph — no characters are dropped.
 - **Wrap-boundary ruler**: A Word-style horizontal ruler above the reading area — drag to set the wrap column (live preview while dragging, re-layout on release), double-click to restore auto width; the setting is persisted.
 - **Automatic progress saving**: Reading positions are remembered per file independently, keyed by a content fingerprint (FNV-1a) to prevent cross-file mix-ups; one-click restore / clear.
 - **Distraction-free mode**: One-click hide the UI; customize font size, font family, width, and background color.
@@ -61,6 +67,7 @@ A browser-based TXT reading tool designed for long-form Chinese content such as 
 
 | Version | Tag | Notes |
 |------|------|------|
+| v1.9 | `v1.9-punct-combos` | Consecutive punctuation rules: runs = one sentence boundary; closing quotes/brackets after punctuation stay with the previous sentence; line breaks after `！”` are no longer dropped |
 | v1.8 | `v1.8-wrap-ruler` | Draggable wrap-boundary ruler above the main view |
 | v1.7 | `v1.7-longpunct-boundary` | Long-punctuation runs (—— / ……) integrated into the layout pipeline as forced separators |
 | v1.6 | `v1.6-segment-long-punct` | Added `segmentByLongPunct` segmentation function |
