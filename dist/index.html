@@ -330,7 +330,22 @@
     background: transparent; color: var(--muted); cursor: pointer; font-size: 14px; line-height: 1;
   }
   .modal-head .modal-x:hover { background: var(--row-hover); color: var(--text); }
-  .modal-body { padding: 16px 18px; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
+  .modal-body { padding: 16px 18px; overflow: auto; display: flex; flex-direction: column; gap: 8px; flex: 1 1 auto; }
+  /* 底部操作条：常驻卡片底部，不随内容滚动，保证按钮永远可见 */
+  .modal-foot {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 12px 18px; border-top: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface-solid) 55%, transparent);
+    flex: 0 0 auto;
+  }
+  .modal-foot .sl-stat { margin-left: auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .modal-foot > button {
+    padding: 8px 14px; border-radius: 9px; border: 1px solid var(--border);
+    background: transparent; color: var(--text); cursor: pointer; font-size: 13px; font-weight: 600;
+  }
+  .modal-foot > button:hover { background: var(--row-hover); }
+  .modal-foot > button.btn-primary { border: none; color: #fff; }
+  .modal-foot > button[hidden] { display: none; }
   .modal-body label { font-size: 12px; color: var(--muted); font-weight: 600; letter-spacing: .3px; }
   .modal-body textarea {
     width: 100%; min-height: 150px; resize: vertical; padding: 12px 14px;
@@ -348,28 +363,20 @@
     border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
   }
   .sl-editbar[hidden] { display: none; }
-  .sl-editbar .sl-edit-tip { font-size: 12px; color: var(--text); flex: 1 1 220px; }
-  .sl-editbar button {
-    padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border);
-    background: transparent; color: var(--text); cursor: pointer; font-size: 12px; font-weight: 600;
-  }
-  .sl-editbar button:hover { background: var(--row-hover); }
-  .modal-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .modal-actions .sl-stat { margin-left: auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .sl-editbar .sl-edit-tip { font-size: 12px; color: var(--text); flex: 1 1 220px; line-height: 1.6; }
   .btn-primary {
     padding: 8px 16px; border-radius: 9px; font-weight: 600; cursor: pointer; border: none;
     background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff;
     box-shadow: 0 8px 22px -10px var(--glow);
   }
   .btn-primary:hover { filter: brightness(1.06); }
-  .modal-actions > button:not(.btn-primary) {
-    padding: 8px 14px; border-radius: 9px; border: 1px solid var(--border);
-    background: transparent; color: var(--text); cursor: pointer; font-size: 13px;
-  }
-  .modal-actions > button:not(.btn-primary):hover { background: var(--row-hover); }
   @media (max-width: 560px) {
     .modal-card { max-height: 94vh; }
     .modal-body textarea { min-height: 110px; }
+    /* 窄屏底栏：按钮等宽铺满，避免换行后长短不齐 */
+    .modal-foot { padding: 10px 14px; gap: 8px; }
+    .modal-foot > button { flex: 1 1 auto; }
+    .modal-foot .sl-stat { flex-basis: 100%; margin-left: 0; text-align: right; }
   }
 
   /* 窄屏：侧栏浮层 */
@@ -586,7 +593,7 @@
               <div class="help-header">
                 <div class="help-icon">📄</div>
                 <div class="help-title">TXT 阅读器</div>
-                <div class="help-version">v1.11</div>
+                <div class="help-version">v1.12</div>
               </div>
 
               <div class="help-section">
@@ -634,7 +641,7 @@
                   <li>点击顶栏「<strong>打开文件</strong>」或「<strong>打开文件夹</strong>」载入 TXT。</li>
                   <li>在左侧「文件列表」切换文件；「搜索定位」与文件搜索均支持 <code>*</code> / <code>?</code> 通配符。</li>
                   <li>在顶栏可调整编码、换行、字号（14–36px）、主题；点「✒ 正文排版」切换正文按句分段。</li>
-                  <li>「✒ 简单排版」弹窗可粘贴大段文字实时按句分段，<strong>结果框可直接修改</strong>（改过之后自动排版暂停，点「重新排版」可覆盖），再复制或保存为 TXT。</li>
+                  <li>「✒ 简单排版」弹窗可粘贴大段文字实时按句分段，<strong>结果框可直接修改</strong>（改过之后自动排版暂停，底栏会浮现「重新排版」可覆盖），再复制或保存为 TXT；所有操作按钮统一收在弹窗底部一排。</li>
                   <li>拖动正文顶端<strong>标尺</strong>设定换行边界（松开生效），双击恢复自动。</li>
                   <li>点击「📖 纯净阅读」进入沉浸模式，可调整字号、字体、页面宽度与背景色，按 R 或 Esc 退出。</li>
                   <li>阅读进度会<strong>自动保存</strong>；需要时点击翻页栏「<strong>↺ 恢复进度</strong>」回到上次阅读位置。</li>
@@ -669,21 +676,19 @@
           <div class="modal-body">
             <label for="slInput">原文（大段连续文字）</label>
             <textarea id="slInput" placeholder="粘贴或输入大段连续文字，输入即实时按句分段…"></textarea>
-            <div class="modal-actions">
-              <button class="btn-primary" id="slRun" type="button">重新排版</button>
-              <button id="slClear" type="button">清空</button>
-              <span class="sl-stat" id="slStat"></span>
-            </div>
             <label for="slOutput">排版结果（每句一段，段间空行；连续短对话不空行 — <b>可直接修改</b>）</label>
             <textarea id="slOutput" placeholder="排版后的文本将显示在这里，可直接修改再复制 / 保存…"></textarea>
             <div class="sl-editbar" id="slEditBar" hidden>
               <span class="sl-edit-tip" id="slDirtyTip">已手动修改：自动排版暂停，避免覆盖你的改动</span>
-              <button id="slRerun" type="button" title="按上方原文重新排版，会覆盖当前修改">重新排版</button>
             </div>
-            <div class="modal-actions">
-              <button class="btn-primary" id="slCopy" type="button">复制结果</button>
-              <button class="btn-primary" id="slSave" type="button">保存为 TXT</button>
-            </div>
+          </div>
+          <!-- 所有操作统一收在最下方一排；「重新排版」按需出现（仅在结果被手动修改后） -->
+          <div class="modal-foot">
+            <button class="btn-primary" id="slCopy" type="button">复制结果</button>
+            <button class="btn-primary" id="slSave" type="button">保存为 TXT</button>
+            <button id="slRerun" type="button" hidden title="按上方原文重新排版，会覆盖当前修改">重新排版</button>
+            <button id="slClear" type="button">清空</button>
+            <span class="sl-stat" id="slStat"></span>
           </div>
         </div>
       </div>
@@ -2146,17 +2151,17 @@
   let slDirty = false;
   const slEditBar = $('slEditBar');
   const slDirtyTip = $('slDirtyTip');
+  const slRerun = $('slRerun');
   function setSlDirty(on) {
     slDirty = on;
     slEditBar.hidden = !on;
+    // 「重新排版」按需出现：只在结果被手动改过时才在底栏亮出，平时不占位、不误导
+    slRerun.hidden = !on;
     slOutput.classList.toggle('is-dirty', on);
   }
   function runSimpleLayout(force) {
     // 未强制、且用户已手动改过结果 → 不覆盖，仅提示
-    if (slDirty && !force) {
-      slDirtyTip.textContent = '结果已手动修改 · 自动排版暂停（点右侧「重新排版」可覆盖）';
-      return;
-    }
+    if (slDirty && !force) return;
     const src = slInput.value;
     const out = Layout.simpleLayout(src);          // 复用同一模块
     slOutput.value = out;
@@ -2190,7 +2195,6 @@
     if (slTimer) clearTimeout(slTimer);
     slTimer = setTimeout(runSimpleLayout, 120);
   });
-  $('slRun').addEventListener('click', () => runSimpleLayout(true));   // 显式按钮 = 强制覆盖
   $('slClear').addEventListener('click', () => {
     slInput.value = ''; slOutput.value = ''; slStat.textContent = ''; setSlDirty(false); slInput.focus();
   });
@@ -2202,7 +2206,7 @@
     const cur = slOutput.value;
     slStat.textContent = cur.trim() ? ('已修改 · ' + cur.split(/\n\s*\n/).filter((s) => s.trim()).length + ' 段') : '';
   });
-  $('slRerun').addEventListener('click', () => runSimpleLayout(true));
+  $('slRerun').addEventListener('click', () => runSimpleLayout(true));   // 底栏按需出现 = 强制覆盖
   $('slCopy').addEventListener('click', () => {
     const txt = slOutput.value;
     if (!txt) { showToast('没有可复制的内容'); return; }
