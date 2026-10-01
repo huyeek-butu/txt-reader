@@ -86,21 +86,23 @@ Formal plans live in [`docs/plans/`](docs/plans/README.md). **Current frozen bas
 
 ## 🔄 Version History
 
-| Version | Tag | Notes |
-|------|------|------|
-| v1.12 | `v1.12-modal-foot` / **`v1.12-stable`** | Simple-layout dialog: all action buttons consolidated into a persistent bottom bar (does not scroll with content); the redundant primary "Re-layout" button removed and re-layout is now on-demand — it only appears in the footer once the result has been edited manually; buttons stretch to fill evenly on narrow screens |
-| v1.11 | `v1.11-editable-output` | Editable layout result: the output box is no longer read-only — edit it directly before copying/saving; a manual edit pauses auto-layout with an inline notice, and "Re-layout" overwrites it; matching the auto output again restores auto mode |
-| v1.10 | `v1.10-export-save` | Export/save loop (PLAN-A): save layout results as TXT from both the main view and the dialog; overwrite the original file directly when FSA is available (with confirmation), otherwise fall back to download |
-| v1.9 | `v1.9-punct-combos` | Consecutive punctuation rules: runs = one sentence boundary; closing quotes/brackets after punctuation stay with the previous sentence; line breaks after `！”` are no longer dropped |
-| v1.8 | `v1.8-wrap-ruler` | Draggable wrap-boundary ruler above the main view |
-| v1.7 | `v1.7-longpunct-boundary` | Long-punctuation runs (—— / ……) integrated into the layout pipeline as forced separators |
-| v1.6 | `v1.6-segment-long-punct` | Added `segmentByLongPunct` segmentation function |
-| v1.5 | `v1.5-layout-module-main` | Layout extracted into a reusable module; main view adopts the same rules |
-| v1.4 | `v1.4-layout-join-lines` | Line breaks after non-sentence-ending punctuation removed before segmentation |
-| v1.3 | `v1.3-simple-layout` | Simple layout: sentence-per-paragraph, blank lines, short-dialogue merging |
-| v1.2 | `v1.2-fontsize-default24` | Default font size 24px; added 28/32/36px steps |
-| v1.1 | `v1.1-wildcard-search` | Wildcard fuzzy search (`*` / `?`) |
-| v1.0 | `v1.0-reader-fingerprint` | Baseline: encoding detection / pagination / search / fingerprinted progress |
+> **Versioning**: follows [Semantic Versioning](https://semver.org/) (SemVer) — `v1.9` is followed by `v1.10` (the **tenth** minor release, not a typo), just like `2.9` is followed by `2.10`. Rows are ordered newest → oldest.
+
+| Version | Tag | Date | Notes |
+|------|------|------|------|
+| v1.12 | `v1.12-modal-foot` / **`v1.12-stable`** | 2026-10-01 | Simple-layout dialog: all action buttons consolidated into a persistent bottom bar (does not scroll with content); the redundant primary "Re-layout" button removed and re-layout is now on-demand — it only appears in the footer once the result has been edited manually; buttons stretch to fill evenly on narrow screens |
+| v1.11 | `v1.11-editable-output` | 2026-10-01 | Editable layout result: the output box is no longer read-only — edit it directly before copying/saving; a manual edit pauses auto-layout with an inline notice, and "Re-layout" overwrites it; matching the auto output again restores auto mode |
+| v1.10 | `v1.10-export-save` | 2026-10-01 | Export/save loop (PLAN-A): save layout results as TXT from both the main view and the dialog; overwrite the original file directly when FSA is available (with confirmation), otherwise fall back to download |
+| v1.9 | `v1.9-punct-combos` | 2026-09-27 | Consecutive punctuation rules: runs = one sentence boundary; closing quotes/brackets after punctuation stay with the previous sentence; line breaks after `！”` are no longer dropped |
+| v1.8 | `v1.8-wrap-ruler` | 2026-09-26 | Draggable wrap-boundary ruler above the main view |
+| v1.7 | `v1.7-longpunct-boundary` | 2026-09-26 | Long-punctuation runs (—— / ……) integrated into the layout pipeline as forced separators |
+| v1.6 | `v1.6-segment-long-punct` | 2026-09-26 | Added `segmentByLongPunct` segmentation function |
+| v1.5 | `v1.5-layout-module-main` | 2026-09-26 | Layout extracted into a reusable module; main view adopts the same rules |
+| v1.4 | `v1.4-layout-join-lines` | 2026-09-26 | Line breaks after non-sentence-ending punctuation removed before segmentation |
+| v1.3 | `v1.3-simple-layout` | 2026-09-26 | Simple layout: sentence-per-paragraph, blank lines, short-dialogue merging |
+| v1.2 | `v1.2-fontsize-default24` | 2026-09-26 | Default font size 24px; added 28/32/36px steps |
+| v1.1 | `v1.1-wildcard-search` | 2026-09-26 | Wildcard fuzzy search (`*` / `?`) |
+| v1.0 | `v1.0-reader-fingerprint` | 2026-07-21 | Baseline: encoding detection / pagination / search / fingerprinted progress |
 
 ## 🌐 Live Demo
 
