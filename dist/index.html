@@ -250,10 +250,12 @@
     -webkit-backdrop-filter: blur(16px) saturate(160%);
     opacity: 0; pointer-events: none;
     transition: opacity .35s var(--ease), transform .35s var(--ease);
-    z-index: 50;
+    z-index: 90;
     white-space: nowrap;
   }
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  /* 弹窗内提示需盖过弹窗层级 */
+  body.modal-open .toast { z-index: 95; }
   body.reading-mode .toast { z-index: 60; }
   @media (max-width: 640px) {
     .empty { padding: 14px; }
@@ -337,6 +339,21 @@
   }
   .modal-body textarea:focus { outline: 2px solid var(--glow); border-color: transparent; }
   .modal-body textarea[readonly] { background: color-mix(in srgb, var(--surface-solid) 88%, var(--accent) 6%); }
+  /* 排版结果可编辑：手动改过之后自动排版暂停，避免覆盖用户改动 */
+  #slOutput.is-dirty { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+  .sl-editbar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 8px 12px; border-radius: 9px;
+    background: color-mix(in srgb, var(--accent) 10%, var(--surface-solid));
+    border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
+  }
+  .sl-editbar[hidden] { display: none; }
+  .sl-editbar .sl-edit-tip { font-size: 12px; color: var(--text); flex: 1 1 220px; }
+  .sl-editbar button {
+    padding: 6px 12px; border-radius: 8px; border: 1px solid var(--border);
+    background: transparent; color: var(--text); cursor: pointer; font-size: 12px; font-weight: 600;
+  }
+  .sl-editbar button:hover { background: var(--row-hover); }
   .modal-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .modal-actions .sl-stat { margin-left: auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
   .btn-primary {
@@ -569,7 +586,7 @@
               <div class="help-header">
                 <div class="help-icon">📄</div>
                 <div class="help-title">TXT 阅读器</div>
-                <div class="help-version">v1.10</div>
+                <div class="help-version">v1.11</div>
               </div>
 
               <div class="help-section">
@@ -583,7 +600,7 @@
                   <li><strong>自动编码识别</strong>：智能检测 GBK / Big5 / UTF-8，也可手动切换。</li>
                   <li><strong>真实显示行分页</strong>：按实际折行后的视觉行计算页码，翻页精准。</li>
                   <li><strong>通配符搜索定位</strong>：<code>*</code> 匹配任意长度、<code>?</code> 匹配单字符；支持循环跳转、正文内联高亮、第 X/N 个匹配。</li>
-                  <li><strong>简单排版 · 按句分段</strong>：主窗口正文与「✒ 简单排版」弹窗共用同一规则——每句一段、段间空行、连续短对话合并不空行；逗号等非句末标点后的换行自动合并；破折号 —— / 省略号 …… 连排作强制分段。</li>
+                  <li><strong>简单排版 · 按句分段</strong>：主窗口正文与「✒ 简单排版」弹窗共用同一规则——每句一段、段间空行、连续短对话合并不空行；逗号等非句末标点后的换行自动合并；破折号 —— / 省略号 …… 连排作强制分段。<strong>排版结果框可直接编辑</strong>，手动改过之后自动排版暂停，避免改动被冲掉。</li>
                   <li><strong>导出 / 保存</strong>：主窗口「⤓ 导出结果」与弹窗「保存为 TXT」支持把排版结果存为文件；浏览器支持时可直接覆盖原文件（需确认），不支持时自动降级为下载，绝不出现"点了没反应"。</li>
                   <li><strong>连续标点组合处理</strong>：<code>！！</code> <code>？！</code> <code>。。</code> 等连排／混排视为一个句末边界，原样保留不折叠；句末标点后的收尾引号括号（<code>！”</code> <code>。</code> <code>……”</code>）归入前一句，不会另起一行或被切到下一句首。</li>
                   <li><strong>换行边界标尺</strong>：窗口顶端 Word 式标尺，拖动设定换行列边界，松开生效、双击恢复自动。</li>
@@ -617,7 +634,7 @@
                   <li>点击顶栏「<strong>打开文件</strong>」或「<strong>打开文件夹</strong>」载入 TXT。</li>
                   <li>在左侧「文件列表」切换文件；「搜索定位」与文件搜索均支持 <code>*</code> / <code>?</code> 通配符。</li>
                   <li>在顶栏可调整编码、换行、字号（14–36px）、主题；点「✒ 正文排版」切换正文按句分段。</li>
-                  <li>「✒ 简单排版」弹窗可粘贴大段文字实时按句分段，并一键复制结果。</li>
+                  <li>「✒ 简单排版」弹窗可粘贴大段文字实时按句分段，<strong>结果框可直接修改</strong>（改过之后自动排版暂停，点「重新排版」可覆盖），再复制或保存为 TXT。</li>
                   <li>拖动正文顶端<strong>标尺</strong>设定换行边界（松开生效），双击恢复自动。</li>
                   <li>点击「📖 纯净阅读」进入沉浸模式，可调整字号、字体、页面宽度与背景色，按 R 或 Esc 退出。</li>
                   <li>阅读进度会<strong>自动保存</strong>；需要时点击翻页栏「<strong>↺ 恢复进度</strong>」回到上次阅读位置。</li>
@@ -657,8 +674,12 @@
               <button id="slClear" type="button">清空</button>
               <span class="sl-stat" id="slStat"></span>
             </div>
-            <label for="slOutput">排版结果（每句一段，段间空行；连续短对话不空行）</label>
-            <textarea id="slOutput" readonly placeholder="排版后的文本将显示在这里，可一键复制…"></textarea>
+            <label for="slOutput">排版结果（每句一段，段间空行；连续短对话不空行 — <b>可直接修改</b>）</label>
+            <textarea id="slOutput" placeholder="排版后的文本将显示在这里，可直接修改再复制 / 保存…"></textarea>
+            <div class="sl-editbar" id="slEditBar" hidden>
+              <span class="sl-edit-tip" id="slDirtyTip">已手动修改：自动排版暂停，避免覆盖你的改动</span>
+              <button id="slRerun" type="button" title="按上方原文重新排版，会覆盖当前修改">重新排版</button>
+            </div>
             <div class="modal-actions">
               <button class="btn-primary" id="slCopy" type="button">复制结果</button>
               <button class="btn-primary" id="slSave" type="button">保存为 TXT</button>
@@ -2120,32 +2141,68 @@
     buildSearchList(locSearch.value);
     updateExportBtn();
   });
-  function runSimpleLayout() {
+  // 排版结果是否被用户手动修改过。改过之后暂停自动排版——
+  // 否则在原文 textarea 里敲一个字，就会把用户对结果的修改整段冲掉。
+  let slDirty = false;
+  const slEditBar = $('slEditBar');
+  const slDirtyTip = $('slDirtyTip');
+  function setSlDirty(on) {
+    slDirty = on;
+    slEditBar.hidden = !on;
+    slOutput.classList.toggle('is-dirty', on);
+  }
+  function runSimpleLayout(force) {
+    // 未强制、且用户已手动改过结果 → 不覆盖，仅提示
+    if (slDirty && !force) {
+      slDirtyTip.textContent = '结果已手动修改 · 自动排版暂停（点右侧「重新排版」可覆盖）';
+      return;
+    }
     const src = slInput.value;
     const out = Layout.simpleLayout(src);          // 复用同一模块
     slOutput.value = out;
+    setSlDirty(false);
     const sents = Layout.splitSentences(src);
     slStat.textContent = src.trim() ? ('共 ' + sents.length + ' 句 · ' + out.split('\n\n').filter(Boolean).length + ' 段') : '';
   }
   let slTimer = null;
   function fallbackCopy(t) {
     try {
-      slOutput.removeAttribute('readonly');
       slOutput.select();
       document.execCommand('copy');
-      slOutput.setAttribute('readonly', '');
       showToast('已复制排版结果');
     } catch (e) { showToast('复制失败，请手动选择'); }
   }
-  simpleLayoutBtn.addEventListener('click', () => { slMask.hidden = false; slInput.focus(); runSimpleLayout(); });
-  $('slClose').addEventListener('click', () => { slMask.hidden = true; });
-  slMask.addEventListener('click', (e) => { if (e.target === slMask) slMask.hidden = true; });
+  function openSimpleLayout() {
+    slMask.hidden = false;
+    document.body.classList.add('modal-open');
+    slInput.focus();
+    // 仅在"干净"时自动重排；用户有未保存修改则原样保留结果框内容
+    runSimpleLayout();
+  }
+  function closeSimpleLayout() {
+    slMask.hidden = true;
+    document.body.classList.remove('modal-open');
+  }
+  simpleLayoutBtn.addEventListener('click', openSimpleLayout);
+  $('slClose').addEventListener('click', closeSimpleLayout);
+  slMask.addEventListener('click', (e) => { if (e.target === slMask) closeSimpleLayout(); });
   slInput.addEventListener('input', () => {
     if (slTimer) clearTimeout(slTimer);
     slTimer = setTimeout(runSimpleLayout, 120);
   });
-  $('slRun').addEventListener('click', runSimpleLayout);
-  $('slClear').addEventListener('click', () => { slInput.value = ''; slOutput.value = ''; slStat.textContent = ''; slInput.focus(); });
+  $('slRun').addEventListener('click', () => runSimpleLayout(true));   // 显式按钮 = 强制覆盖
+  $('slClear').addEventListener('click', () => {
+    slInput.value = ''; slOutput.value = ''; slStat.textContent = ''; setSlDirty(false); slInput.focus();
+  });
+  // 结果框手动编辑：一旦改过就置脏，暂停自动排版
+  slOutput.addEventListener('input', () => {
+    const out = Layout.simpleLayout(slInput.value);
+    if (slOutput.value === out) { setSlDirty(false); return; }   // 改回原样 → 恢复自动
+    if (!slDirty) setSlDirty(true);
+    const cur = slOutput.value;
+    slStat.textContent = cur.trim() ? ('已修改 · ' + cur.split(/\n\s*\n/).filter((s) => s.trim()).length + ' 段') : '';
+  });
+  $('slRerun').addEventListener('click', () => runSimpleLayout(true));
   $('slCopy').addEventListener('click', () => {
     const txt = slOutput.value;
     if (!txt) { showToast('没有可复制的内容'); return; }
@@ -2159,7 +2216,7 @@
     if (!txt) { showToast('没有可保存的内容'); return; }
     saveTextToFile(txt, { source: 'modal' });
   });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !slMask.hidden) slMask.hidden = true; });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !slMask.hidden) closeSimpleLayout(); });
 
   // 翻页速度（间隔秒数）调节
   speedInput.addEventListener('input', () => {
