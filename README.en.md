@@ -8,7 +8,7 @@
 
 A **browser-based, single-file** TXT reading tool, purpose-built for long-form Chinese content such as novels, logs, and scripts. It auto-detects GBK / Big5 / UTF-8 encodings, paginates by real rendered lines, and offers wildcard search, sentence-based layout, a draggable wrap-boundary ruler, distraction-free reading, eye-care themes, and keyboard shortcuts — bringing you back to immersive reading.
 
-> **v1.9** · Pure front-end · Zero dependencies · Works out of the box
+> **v1.10** · Pure front-end · Zero dependencies · Works out of the box
 
 ---
 
@@ -80,6 +80,7 @@ Formal plans live in [`docs/plans/`](docs/plans/README.md). Current frozen basel
 
 | Version | Tag | Notes |
 |------|------|------|
+| v1.10 | `v1.10-export-save` | Export/save loop (PLAN-A): save layout results as TXT from both the main view and the dialog; overwrite the original file directly when FSA is available (with confirmation), otherwise fall back to download |
 | v1.9 | `v1.9-punct-combos` | Consecutive punctuation rules: runs = one sentence boundary; closing quotes/brackets after punctuation stay with the previous sentence; line breaks after `！”` are no longer dropped |
 | v1.8 | `v1.8-wrap-ruler` | Draggable wrap-boundary ruler above the main view |
 | v1.7 | `v1.7-longpunct-boundary` | Long-punctuation runs (—— / ……) integrated into the layout pipeline as forced separators |

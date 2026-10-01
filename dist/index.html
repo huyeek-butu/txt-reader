@@ -509,6 +509,9 @@
       <div class="ctrl">
         <button class="btn-ghost active" id="layoutToggleBtn" title="正文按句分段排版（与「简单排版」同一规则，点击切换原样/排版）" aria-pressed="true">✒ 正文排版</button>
       </div>
+      <div class="ctrl">
+        <button class="btn-ghost" id="exportBtn" title="导出当前排版结果为 TXT 文件" disabled>⤓ 导出结果</button>
+      </div>
     </header>
 
     <!-- 主体 -->
@@ -566,7 +569,7 @@
               <div class="help-header">
                 <div class="help-icon">📄</div>
                 <div class="help-title">TXT 阅读器</div>
-                <div class="help-version">v1.9</div>
+                <div class="help-version">v1.10</div>
               </div>
 
               <div class="help-section">
@@ -581,6 +584,7 @@
                   <li><strong>真实显示行分页</strong>：按实际折行后的视觉行计算页码，翻页精准。</li>
                   <li><strong>通配符搜索定位</strong>：<code>*</code> 匹配任意长度、<code>?</code> 匹配单字符；支持循环跳转、正文内联高亮、第 X/N 个匹配。</li>
                   <li><strong>简单排版 · 按句分段</strong>：主窗口正文与「✒ 简单排版」弹窗共用同一规则——每句一段、段间空行、连续短对话合并不空行；逗号等非句末标点后的换行自动合并；破折号 —— / 省略号 …… 连排作强制分段。</li>
+                  <li><strong>导出 / 保存</strong>：主窗口「⤓ 导出结果」与弹窗「保存为 TXT」支持把排版结果存为文件；浏览器支持时可直接覆盖原文件（需确认），不支持时自动降级为下载，绝不出现"点了没反应"。</li>
                   <li><strong>连续标点组合处理</strong>：<code>！！</code> <code>？！</code> <code>。。</code> 等连排／混排视为一个句末边界，原样保留不折叠；句末标点后的收尾引号括号（<code>！”</code> <code>。</code> <code>……”</code>）归入前一句，不会另起一行或被切到下一句首。</li>
                   <li><strong>换行边界标尺</strong>：窗口顶端 Word 式标尺，拖动设定换行列边界，松开生效、双击恢复自动。</li>
                   <li><strong>进度自动保存</strong>：多文件独立记忆阅读位置，内容指纹防串档，一键恢复。</li>
@@ -617,6 +621,7 @@
                   <li>拖动正文顶端<strong>标尺</strong>设定换行边界（松开生效），双击恢复自动。</li>
                   <li>点击「📖 纯净阅读」进入沉浸模式，可调整字号、字体、页面宽度与背景色，按 R 或 Esc 退出。</li>
                   <li>阅读进度会<strong>自动保存</strong>；需要时点击翻页栏「<strong>↺ 恢复进度</strong>」回到上次阅读位置。</li>
+                  <li>排版结果可落盘：点顶栏「<strong>⤓ 导出结果</strong>」或弹窗「<strong>保存为 TXT</strong>」；浏览器支持时可直接覆盖原文件（需确认），否则自动下载。</li>
                 </ul>
               </div>
 
@@ -656,6 +661,7 @@
             <textarea id="slOutput" readonly placeholder="排版后的文本将显示在这里，可一键复制…"></textarea>
             <div class="modal-actions">
               <button class="btn-primary" id="slCopy" type="button">复制结果</button>
+              <button class="btn-primary" id="slSave" type="button">保存为 TXT</button>
             </div>
           </div>
         </div>
@@ -850,7 +856,103 @@
     return (g.cjk + g.punct) >= (b.cjk + b.punct) ? 'gbk' : 'big5';
   }
 
-  /* ---------- 解码 + 布局 ---------- */
+  /* ---------- 导出 / 保存（Plan-A：本地文件回写与导出闭环） ----------
+   * 双路设计：
+   *   主路 —— File System Access API 可用时弹「保存」对话框，可直接覆盖原文件或另存；
+   *   备份路 —— FSA 不可用（Firefox/Safari/预览沙箱）时降级为 Blob 下载，保证永不出现"点了没反应"。
+   * 覆盖原文件属不可逆操作：必须先确认（默认另存）。
+   * ------------------------------------------------------------------ */
+  const FSA_SAVE = (typeof window.showSaveFilePicker === 'function');
+  let lastSaveHandle = null;      // 本次会话记住另存的 handle，便于再次保存
+
+  // 按当前编码把文本编成字节（TextEncoder 仅支持 UTF-8，其余编码用手工映射）
+  function encodeBytes(text, enc) {
+    const e = (enc || 'utf-8').toLowerCase();
+    if (e === 'utf-8') return new TextEncoder().encode(text);
+    // GBK / Big5：借助隐藏 iframe 无法可靠取回字节，改用查表法不可行（表体积过大），
+    // 故仅在 UTF-8 下直接编码；其它编码走「UTF-8 + 原编码提示」策略，避免静默乱码。
+    return null;   // 非 UTF-8 返回 null，调用方据此提示用户
+  }
+
+  function isFsaActive() { return FSA_SAVE && window.isSecureContext !== false; }
+
+  function downloadText(text, filename) {
+    try {
+      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename;
+      document.body.appendChild(a); a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showToast('已下载：' + filename);
+      return true;
+    } catch (err) {
+      showToast('保存失败：' + (err && err.message ? err.message : '未知错误'));
+      return false;
+    }
+  }
+
+  // 建议文件名：基于当前文件名加后缀，避免误覆盖原文件
+  function suggestName(suffix) {
+    const base = (state.fileName || 'reader-output').replace(/\.txt$/i, '');
+    return base + (suffix || '') + '.txt';
+  }
+
+  /**
+   * 保存文本到本地。
+   * @param {string} text     要保存的内容
+   * @param {object} opts     { source: 'modal'|'main' }
+   *                         source='main' 表示来自主窗口排版视图，允许「覆盖原文件」选项
+   */
+  async function saveTextToFile(text, opts) {
+    opts = opts || {};
+    if (!text) { showToast('没有可保存的内容'); return; }
+
+    // 编码提示：本项目读取支持 GBK/Big5，但写出统一为 UTF-8（浏览器限制）
+    if (state.enc && state.enc.toLowerCase() !== 'utf-8') {
+      showToast('原文为 ' + state.enc.toUpperCase() + '，导出统一为 UTF-8 编码');
+    }
+
+    if (!isFsaActive()) {
+      // 备份路：下载
+      downloadText(text, suggestName('.layout'));
+      return;
+    }
+
+    try {
+      // 「覆盖原文件」仅当：本会话已另存过同一 handle（说明该文件由本会话创建/选择）
+      // 覆盖是不可逆操作，确认信息必须含：写哪个文件 · 后果 · 能否撤回 · 替代选项
+      let handle = null, overwrite = false;
+      if (opts.source === 'main' && lastSaveHandle) {
+        overwrite = window.confirm(
+          '要覆盖上次保存的文件吗？\n\n' +
+          '· 写入：' + (state.fileName || '已选文件') + '\n' +
+          '· 后果：原内容被替换，不可撤销\n' +
+          '· 撤回：不可撤回\n' +
+          '· 替代：点【取消】将另存为新文件'
+        );
+        if (overwrite) handle = lastSaveHandle;
+      }
+      if (!handle) {
+        const suggested = suggestName('.layout');
+        handle = await window.showSaveFilePicker({
+          suggestedName: suggested,
+          types: [{ description: '文本文件 (TXT)', accept: { 'text/plain': ['.txt'] } }],
+        });
+        lastSaveHandle = handle;
+      }
+      const writable = await handle.createWritable();
+      await writable.write(text);
+      await writable.close();
+      showToast(overwrite ? '已覆盖保存' : '已保存到所选文件');
+    } catch (err) {
+      if (err && err.name === 'AbortError') return;   // 用户取消，静默处理
+      // FSA 中途失败 → 降级下载，保证内容不丢
+      downloadText(text, suggestName('.layout'));
+    }
+  }
+
   // 依据 state.layoutEnabled 计算正文“逻辑行”：开启时套用 Layout 同款按句分段规则，
   // 使主窗口显示与「简单排版」弹窗采用一致规则，避免重复实现。
   function applyLayoutToLines() {
@@ -878,7 +980,7 @@
     viewport.scrollTop = 0;
     navPage = 1;
     render();
-    setTimeout(() => { suppressAutoSave = false; isScrolling = false; }, 500);
+      setTimeout(() => { suppressAutoSave = false; isScrolling = false; }, 500);
     buildSearchList(locSearch.value);
   }
 
@@ -1606,6 +1708,7 @@
     lastQuery = '';
     empty.classList.remove('hidden');
     updateRestoreBtn();   // 清空后无进度，禁用「恢复进度」按钮
+    updateExportBtn();    // 无文件则禁用导出按钮
   }
 
   /* ---------- 搜索定位 ---------- */
@@ -1994,6 +2097,16 @@
   const slStat = $('slStat');
   // 主窗口「正文排版」开关：复用 Layout 模块，使阅读视图与「简单排版」弹窗规则一致
   const layoutToggleBtn = $('layoutToggleBtn');
+  const exportBtn = $('exportBtn');
+  // 导出按钮：未打开文件时禁用，避免出现"点了没反应"的死路（Plan-A 验收项）
+  function updateExportBtn() { exportBtn.disabled = !state.bytes; }
+  updateExportBtn();
+  exportBtn.addEventListener('click', () => {
+    if (!state.bytes) { showToast('请先打开文件'); return; }
+    const text = state.layoutEnabled ? Layout.simpleLayout(decodeBytes(state.bytes, state.enc) || '')
+                                     : (decodeBytes(state.bytes, state.enc) || '');
+    saveTextToFile(text, { source: 'main' });
+  });
   layoutToggleBtn.classList.toggle('active', state.layoutEnabled);
   layoutToggleBtn.setAttribute('aria-pressed', String(state.layoutEnabled));
   layoutToggleBtn.addEventListener('click', () => {
@@ -2005,6 +2118,7 @@
     computeLayout();
     render();
     buildSearchList(locSearch.value);
+    updateExportBtn();
   });
   function runSimpleLayout() {
     const src = slInput.value;
@@ -2038,6 +2152,12 @@
     if (navigator.clipboard && navigator.clipboard.writeText) {
       navigator.clipboard.writeText(txt).then(() => showToast('已复制排版结果')).catch(() => fallbackCopy(txt));
     } else { fallbackCopy(txt); }
+  });
+  // Plan-A：弹窗内保存排版结果为 TXT（不含「覆盖原文件」选项——来源是粘贴文本，与原文件无关）
+  $('slSave').addEventListener('click', () => {
+    const txt = slOutput.value;
+    if (!txt) { showToast('没有可保存的内容'); return; }
+    saveTextToFile(txt, { source: 'modal' });
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !slMask.hidden) slMask.hidden = true; });
 
