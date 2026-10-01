@@ -63,6 +63,19 @@ A browser-based TXT reading tool designed for long-form Chinese content such as 
 
 > **Tip**: When the encoding/font-size dropdowns are focused, PageUp / PageDown won't trigger page-turns, preventing accidental navigation.
 
+## 🛣 Roadmap
+
+Formal plans live in [`docs/plans/`](docs/plans/README.md). Current frozen baseline: `v1.9-punct-combos`.
+
+| ID | Name | Priority | Effort | Status |
+|---|---|---|---|---|
+| `PLAN-2026-1001-A` | Local file write-back & export | **P0** | M | FROZEN v1.0 |
+| `PLAN-2026-1001-B` | Text-to-speech reading | P1 | M | FROZEN v1.0 |
+| `PLAN-2026-1001-C` | Large-file performance & mobile | P1 | L | FROZEN v1.0 |
+| `PLAN-2026-1001-D` | Highlights & knowledge-base export | P2 | L | FROZEN v1.0 |
+
+> Suggested order: A → B → C → D. Frozen plans stay unchanged; revisions bump the version (v1.0 → v1.1) and append a change log inside the document.
+
 ## 🔄 Version History
 
 | Version | Tag | Notes |
