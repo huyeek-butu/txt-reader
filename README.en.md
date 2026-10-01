@@ -65,22 +65,30 @@ A browser-based TXT reading tool designed for long-form Chinese content such as 
 
 ## 🛣 Roadmap
 
-Formal plans live in [`docs/plans/`](docs/plans/README.md). Current frozen baseline: `v1.9-punct-combos`.
+Formal plans live in [`docs/plans/`](docs/plans/README.md). **Current frozen baseline: `v1.12-stable`** (code stability line); plan docs baseline `plans-v1.0-frozen`.
 
 | ID | Name | Priority | Effort | Status |
 |---|---|---|---|---|
-| `PLAN-2026-1001-A` | Local file write-back & export | **P0** | M | FROZEN v1.0 |
+| `PLAN-2026-1001-A` | Local file write-back & export | **P0** | M | **✅ Delivered in v1.10** |
 | `PLAN-2026-1001-B` | Text-to-speech reading | P1 | M | FROZEN v1.0 |
 | `PLAN-2026-1001-C` | Large-file performance & mobile | P1 | L | FROZEN v1.0 |
 | `PLAN-2026-1001-D` | Highlights & knowledge-base export | P2 | L | FROZEN v1.0 |
 
 > Suggested order: A → B → C → D. Frozen plans stay unchanged; revisions bump the version (v1.0 → v1.1) and append a change log inside the document.
 
+## ⚠️ Known Issues
+
+**Pasting a large block of text into the "Simple layout" dialog may stutter.**
+
+- **Cause**: when pasting large text, browsers deliver `input` events in chunks; combined with live re-layout this triggers repeated full recomputation and DOM rewrites.
+- **Workaround**: save the content as a `.txt` file, load it via "Open file", **copy from the main view**, then paste into the dialog — `FileReader` reads the whole file in one shot, so there is no chunking.
+- **Clarification**: this is *not* a capacity limit. There is **no character limit** in the code, and the layout algorithm benchmarks at ~**20 ms for 500,000 Chinese characters**. The bottleneck is clipboard chunking, not the algorithm.
+
 ## 🔄 Version History
 
 | Version | Tag | Notes |
 |------|------|------|
-| v1.12 | `v1.12-modal-foot` | Simple-layout dialog: all action buttons consolidated into a persistent bottom bar (does not scroll with content); the redundant primary "Re-layout" button removed and re-layout is now on-demand — it only appears in the footer once the result has been edited manually; buttons stretch to fill evenly on narrow screens |
+| v1.12 | `v1.12-modal-foot` / **`v1.12-stable`** | Simple-layout dialog: all action buttons consolidated into a persistent bottom bar (does not scroll with content); the redundant primary "Re-layout" button removed and re-layout is now on-demand — it only appears in the footer once the result has been edited manually; buttons stretch to fill evenly on narrow screens |
 | v1.11 | `v1.11-editable-output` | Editable layout result: the output box is no longer read-only — edit it directly before copying/saving; a manual edit pauses auto-layout with an inline notice, and "Re-layout" overwrites it; matching the auto output again restores auto mode |
 | v1.10 | `v1.10-export-save` | Export/save loop (PLAN-A): save layout results as TXT from both the main view and the dialog; overwrite the original file directly when FSA is available (with confirmation), otherwise fall back to download |
 | v1.9 | `v1.9-punct-combos` | Consecutive punctuation rules: runs = one sentence boundary; closing quotes/brackets after punctuation stay with the previous sentence; line breaks after `！”` are no longer dropped |
