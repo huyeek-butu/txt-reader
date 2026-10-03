@@ -105,13 +105,17 @@ class CDP {
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-/* ---------- 浏览器进程管理 ---------- */
-async function launchBrowser({ port, profileDir, windowSize = '1400,900', extraArgs = [], url = 'about:blank' } = {}) {
+/* ---------- 浏览器进程管理 ----------
+ * headless: false 会开一个真实可见的窗口（几秒后自动关闭）。
+ * 为什么需要它：无头模式强制 `--disable-gpu`，文字排版走软件光栅化，
+ * canvas measureText 首次测一个未测字符实测约 148µs（完整字体回退链），
+ * 比正常浏览器慢一两个量级。测「首屏 <300ms」这类**面向真实桌面 Chrome** 的目标时，
+ * 无头数字可能把环境开销当成产品开销。故保留一条有头通道做交叉验证。 */
+async function launchBrowser({ port, profileDir, windowSize = '1400,900', extraArgs = [], url = 'about:blank', headless = true } = {}) {
   const exe = findBrowser();
   fs.mkdirSync(profileDir, { recursive: true });
   const args = [
-    '--headless=new',
-    '--disable-gpu',
+    ...(headless ? ['--headless=new', '--disable-gpu'] : []),
     '--no-sandbox',
     '--no-first-run',
     '--no-default-browser-check',

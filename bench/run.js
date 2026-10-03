@@ -37,13 +37,14 @@ function parseArgs(argv) {
   // outDir 默认 bench/out（已被 .gitignore 忽略）；基线快照用 --outdir bench/baseline 入库
   // --file 可指向任意 HTML —— A/B 复测时用它分别指向「改前」与「改后」的副本，
   // 交替跑才能把代码差异与环境漂移分开。
-  const o = { rows: null, label: 'baseline', port: 9333, outDir: path.join(__dirname, 'out'), file: DEFAULT_MAIN_HTML };
+  const o = { rows: null, label: 'baseline', port: 9333, outDir: path.join(__dirname, 'out'), file: DEFAULT_MAIN_HTML, headed: false };
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--rows' && argv[i + 1]) o.rows = argv[++i].split(',').map(s => parseInt(s, 10));
     else if (argv[i] === '--label' && argv[i + 1]) o.label = argv[++i];
     else if (argv[i] === '--port' && argv[i + 1]) o.port = parseInt(argv[++i], 10);
     else if (argv[i] === '--outdir' && argv[i + 1]) o.outDir = path.resolve(process.cwd(), argv[++i]);
     else if (argv[i] === '--file' && argv[i + 1]) o.file = path.resolve(process.cwd(), argv[++i]);
+    else if (argv[i] === '--headed') o.headed = true;   // 开真实窗口（几秒后自动关闭），做无头数字的交叉验证
   }
   return o;
 }
@@ -161,9 +162,9 @@ const MEASURE_SCROLL = `(async () => {
 })()`;
 
 /* ---------- 单个样本的完整测量 ---------- */
-async function benchSample({ samplePath, rows, port, profileDir, mainHtml }) {
+async function benchSample({ samplePath, rows, port, profileDir, mainHtml, headed }) {
   const result = { rows, file: path.basename(samplePath), ok: false, errors: [] };
-  const child = await launchBrowser({ port, profileDir });
+  const child = await launchBrowser({ port, profileDir, headless: !headed });
   let cdp = null;
   try {
     await waitForDevTools(port);
@@ -293,7 +294,7 @@ async function main() {
     const samplePath = path.join(SAMPLES_DIR, job.file);
     const sizeMB = (fs.statSync(samplePath).size / 1048576).toFixed(1);
     process.stdout.write('[bench] ' + job.file.padEnd(20) + ' (' + sizeMB + ' MB) ... ');
-    const r = await benchSample({ samplePath, rows: job.rows, port, mainHtml, profileDir: path.join(__dirname, '.profile', 'p' + port) });
+    const r = await benchSample({ samplePath, rows: job.rows, port, mainHtml, headed: args.headed, profileDir: path.join(__dirname, '.profile', 'p' + port) });
     report.results.push(r);
     if (r.ok) {
       console.log('OK  首屏 ' + r.timing.firstRowMs + 'ms | 排版切换 ' + r.syncActions.layoutToggleOffMs + '/' + r.syncActions.layoutToggleOnMs + 'ms | 堆 ' + r.heapAfterMB + 'MB | longtask ' + r.scroll.longTaskCount + '次(最长' + r.scroll.longTaskMaxMs + 'ms)');
