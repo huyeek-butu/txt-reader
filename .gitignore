@@ -4,3 +4,8 @@
 # OS noise
 Thumbs.db
 Desktop.ini
+
+# Benchmark artifacts (generated, large — regenerate via `node bench/gen-samples.js`)
+bench/samples/
+bench/out/
+bench/.profile/

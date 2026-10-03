@@ -1,0 +1,123 @@
+{
+  "label": "baseline",
+  "startedAt": "2026-10-03T07:10:01.546Z",
+  "mainFile": "txt-reader.html",
+  "env": {
+    "browser": "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+    "node": "v22.22.2",
+    "platform": "win32 x64",
+    "mainFileBytes": 156771,
+    "mainFileLines": 3038,
+    "mainFileMd5": "a31e2faedf5aa94abdc417b88c441715"
+  },
+  "results": [
+    {
+      "rows": 10000,
+      "file": "sample-1w.txt",
+      "ok": true,
+      "errors": [],
+      "navToReadyMs": 659,
+      "heapBeforeMB": 0.6,
+      "timing": {
+        "firstRowMs": 404.3,
+        "stLinesMs": 404.3
+      },
+      "syncActions": {
+        "layoutToggleOffMs": 174.2,
+        "layoutToggleOnMs": 131,
+        "font24to28Ms": 272,
+        "fontRestoreMs": 75.1,
+        "wrapOffMs": 166.6,
+        "wrapOnMs": 84.5
+      },
+      "scroll": {
+        "scrollFrames": 200,
+        "scrollWallMs": 10957,
+        "longTaskCount": 1,
+        "longTaskMaxMs": 65,
+        "longTaskTotalMs": 65
+      },
+      "heapAfterMB": 3.6,
+      "domCounters": {
+        "documents": 1,
+        "nodes": 1185,
+        "listeners": 70
+      },
+      "stateInfo": {
+        "stLines": "12,279"
+      }
+    },
+    {
+      "rows": 100000,
+      "file": "sample-10w.txt",
+      "ok": true,
+      "errors": [],
+      "navToReadyMs": 689,
+      "heapBeforeMB": 0.6,
+      "timing": {
+        "firstRowMs": 1008.6,
+        "stLinesMs": 1008.7
+      },
+      "syncActions": {
+        "layoutToggleOffMs": 602.7,
+        "layoutToggleOnMs": 871.3,
+        "font24to28Ms": 454.3,
+        "fontRestoreMs": 426.7,
+        "wrapOffMs": 1254,
+        "wrapOnMs": 403
+      },
+      "scroll": {
+        "scrollFrames": 200,
+        "scrollWallMs": 10347,
+        "longTaskCount": 0,
+        "longTaskMaxMs": 0,
+        "longTaskTotalMs": 0
+      },
+      "heapAfterMB": 31.8,
+      "domCounters": {
+        "documents": 1,
+        "nodes": 1163,
+        "listeners": 70
+      },
+      "stateInfo": {
+        "stLines": "400,687"
+      }
+    },
+    {
+      "rows": 500000,
+      "file": "sample-50w.txt",
+      "ok": true,
+      "errors": [],
+      "navToReadyMs": 664,
+      "heapBeforeMB": 0.6,
+      "timing": {
+        "firstRowMs": 4385.1,
+        "stLinesMs": 4385.1
+      },
+      "syncActions": {
+        "layoutToggleOffMs": 2806,
+        "layoutToggleOnMs": 4080.6,
+        "font24to28Ms": 2115.4,
+        "fontRestoreMs": 2116.4,
+        "wrapOffMs": 5842.8,
+        "wrapOnMs": 2120.5
+      },
+      "scroll": {
+        "scrollFrames": 200,
+        "scrollWallMs": 10374,
+        "longTaskCount": 1,
+        "longTaskMaxMs": 133,
+        "longTaskTotalMs": 133
+      },
+      "heapAfterMB": 155.6,
+      "domCounters": {
+        "documents": 1,
+        "nodes": 1173,
+        "listeners": 70
+      },
+      "stateInfo": {
+        "stLines": "2,002,401"
+      }
+    }
+  ]
+}
