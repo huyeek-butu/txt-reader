@@ -118,7 +118,7 @@ Formal plans live in [`docs/plans/`](docs/plans/README.md). **Current code versi
 |------|------|
 | [CloudStudio Preview](https://50020f68b853499b9e1c53569770686a.app.codebuddy.work) | Direct access within mainland China (recommended) |
 | [GitHub Pages](https://huyeek-butu.github.io/txt-reader/) | Official address (may be blocked in mainland China) |
-| [jsDelivr CDN](https://cdn.jsdelivr.net/gh/huyeek-butu/txt-reader@main/index.html) | CDN-accelerated mirror |
+| [jsDelivr CDN](https://gcore.jsdelivr.net/gh/huyeek-butu/txt-reader@v1.18-chunked-layout/index.html) | CDN-accelerated mirror (pinned tag; use the `gcore` node — `cdn`/`fastly` return 301 to the raw source, unreachable in mainland China) |
 
 ## 📦 Local Usage
 

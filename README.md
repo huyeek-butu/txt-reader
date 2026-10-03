@@ -118,7 +118,7 @@
 |------|------|
 | [CloudStudio 预览](https://50020f68b853499b9e1c53569770686a.app.codebuddy.work) | 国内直连，推荐使用 |
 | [GitHub Pages](https://huyeek-butu.github.io/txt-reader/) | 官方地址（国内可能被墙） |
-| [jsDelivr CDN](https://cdn.jsdelivr.net/gh/huyeek-butu/txt-reader@main/index.html) | CDN 加速镜像 |
+| [jsDelivr CDN](https://gcore.jsdelivr.net/gh/huyeek-butu/txt-reader@v1.18-chunked-layout/index.html) | CDN 加速镜像（固定 tag；须用 `gcore` 节点，`cdn`/`fastly` 会 301 到国内不可达的 raw 源） |
 
 ## 📦 本地使用
 
