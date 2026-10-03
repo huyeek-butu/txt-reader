@@ -8,7 +8,7 @@
 
 A **browser-based, single-file** TXT reading tool, purpose-built for long-form Chinese content such as novels, logs, and scripts. It auto-detects GBK / Big5 / UTF-8 encodings, paginates by real rendered lines, and offers wildcard search, sentence-based layout, a draggable wrap-boundary ruler, distraction-free reading, eye-care themes, and keyboard shortcuts — bringing you back to immersive reading.
 
-> **v1.12** · Pure front-end · Zero dependencies · Works out of the box
+> **v1.13** · Pure front-end · Zero dependencies · Works out of the box
 
 ---
 
@@ -70,7 +70,7 @@ Formal plans live in [`docs/plans/`](docs/plans/README.md). **Current frozen bas
 | ID | Name | Priority | Effort | Status |
 |---|---|---|---|---|
 | `PLAN-2026-1001-A` | Local file write-back & export | **P0** | M | **✅ Delivered in v1.10** |
-| `PLAN-2026-1001-B` | Text-to-speech reading | P1 | M | FROZEN v1.0 |
+| `PLAN-2026-1001-B` | Text-to-speech reading | P1 | M | **✅ Delivered in v1.13** |
 | `PLAN-2026-1001-C` | Large-file performance & mobile | P1 | L | FROZEN v1.0 |
 | `PLAN-2026-1001-D` | Highlights & knowledge-base export | P2 | L | FROZEN v1.0 |
 
@@ -90,6 +90,7 @@ Formal plans live in [`docs/plans/`](docs/plans/README.md). **Current frozen bas
 
 | Version | Tag | Date | Notes |
 |------|------|------|------|
+| v1.13 | `v1.13-speak` | 2026-10-03 | Text-to-speech (PLAN-B): read the text sentence by sentence with per-sentence highlight follow; pause/resume/stop; 0.5–2.0× rate applied in real time; Chinese voice picker; follow-scroll toggle. Long sentences are re-chunked to dodge the ~15s browser cut-off; a watchdog self-heals background throttling; the spoken position is stored per file for resume. Also fixes a PLAN-A leftover where the export button stayed disabled after opening a file |
 | v1.12 | `v1.12-modal-foot` / **`v1.12-stable`** | 2026-10-01 | Simple-layout dialog: all action buttons consolidated into a persistent bottom bar (does not scroll with content); the redundant primary "Re-layout" button removed and re-layout is now on-demand — it only appears in the footer once the result has been edited manually; buttons stretch to fill evenly on narrow screens |
 | v1.11 | `v1.11-editable-output` | 2026-10-01 | Editable layout result: the output box is no longer read-only — edit it directly before copying/saving; a manual edit pauses auto-layout with an inline notice, and "Re-layout" overwrites it; matching the auto output again restores auto mode |
 | v1.10 | `v1.10-export-save` | 2026-10-01 | Export/save loop (PLAN-A): save layout results as TXT from both the main view and the dialog; overwrite the original file directly when FSA is available (with confirmation), otherwise fall back to download |

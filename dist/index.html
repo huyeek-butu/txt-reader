@@ -436,12 +436,44 @@
     gap: 8px;
     max-width: none;
   }
-  body.reading-mode .read-bar.compact .grp:not(.actions),
+  body.reading-mode .read-bar.compact .grp:not(.actions):not(.speak-bar),
   body.reading-mode .read-bar.compact .sep { display: none; }
+  /* 朗读控制条在紧凑模式下保留（听书时是核心控件），仅隐藏其语音下拉以省宽度 */
+  body.reading-mode .read-bar.compact .speak-bar select { display: none; }
   body.reading-mode .read-bar.compact .grp.actions { gap: 8px; }
   body.reading-mode .read-bar.compact .actions button { padding: 6px 12px; }
   body.reading-mode .read-bar.compact .settings-btn .settings-text { display: none; }
   body.reading-mode .read-bar.compact .settings-btn .settings-icon { display: inline; }
+
+  /* ============ 朗读（TTS） ============ */
+  /* 正在朗读的视觉行：整行底色 + 左侧竖条。用行级高亮而非字符级 mark，
+     避免与搜索的 <mark class="kw"> 在同一行内互相嵌套、切碎 HTML。 */
+  #content .row.spk {
+    background: color-mix(in srgb, var(--accent) 20%, transparent);
+    box-shadow: inset 3px 0 0 0 var(--accent);
+    border-radius: 4px;
+  }
+  #content .row.spk .tx { color: var(--text); }
+  /* 跟随朗读时的滚动目标留白，避免高亮行贴顶 */
+  .speak-bar {
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .speak-bar label { color: var(--muted); font-size: 12px; }
+  .speak-bar button { padding: 6px 11px; border-radius: 9px; font-size: 13px; }
+  .speak-bar button.active {
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    color: #fff; border: none; font-weight: 600;
+  }
+  .speak-bar button:disabled { opacity: .45; cursor: not-allowed; }
+  .speak-bar select {
+    padding: 5px 8px; border-radius: 9px; font-size: 12px;
+    background: var(--surface-solid); color: var(--text);
+    border: 1px solid var(--border); max-width: 150px;
+  }
+  .speak-bar input[type=range] { width: 84px; }
+  .speak-bar .spk-rate { font-size: 12px; color: var(--text); font-weight: 600; min-width: 34px; text-align: center; font-variant-numeric: tabular-nums; }
+  /* 顶栏入口在朗读中的状态 */
+  #speakBtn.active { box-shadow: 0 0 0 1px var(--accent) inset; }
 
   /* 净化：隐藏非必要 UI，仅留正文核心内容 */
   body.reading-mode .topbar,
@@ -534,6 +566,9 @@
         <button class="btn-ghost active" id="layoutToggleBtn" title="正文按句分段排版（与「简单排版」同一规则，点击切换原样/排版）" aria-pressed="true">✒ 正文排版</button>
       </div>
       <div class="ctrl">
+        <button class="btn-ghost" id="speakBtn" title="从当前位置开始朗读（TTS）" disabled>🔊 朗读</button>
+      </div>
+      <div class="ctrl">
         <button class="btn-ghost" id="exportBtn" title="导出当前排版结果为 TXT 文件" disabled>⤓ 导出结果</button>
       </div>
     </header>
@@ -593,7 +628,7 @@
               <div class="help-header">
                 <div class="help-icon">📄</div>
                 <div class="help-title">TXT 阅读器</div>
-                <div class="help-version">v1.12</div>
+                <div class="help-version">v1.13</div>
               </div>
 
               <div class="help-section">
@@ -610,6 +645,7 @@
                   <li><strong>简单排版 · 按句分段</strong>：主窗口正文与「✒ 简单排版」弹窗共用同一规则——每句一段、段间空行、连续短对话合并不空行；逗号等非句末标点后的换行自动合并；破折号 —— / 省略号 …… 连排作强制分段。<strong>排版结果框可直接编辑</strong>，手动改过之后自动排版暂停，避免改动被冲掉。</li>
                   <li><strong>导出 / 保存</strong>：主窗口「⤓ 导出结果」与弹窗「保存为 TXT」支持把排版结果存为文件；浏览器支持时可直接覆盖原文件（需确认），不支持时自动降级为下载，绝不出现"点了没反应"。</li>
                   <li><strong>连续标点组合处理</strong>：<code>！！</code> <code>？！</code> <code>。。</code> 等连排／混排视为一个句末边界，原样保留不折叠；句末标点后的收尾引号括号（<code>！”</code> <code>。</code> <code>……”</code>）归入前一句，不会另起一行或被切到下一句首。</li>
+                  <li><strong>语音朗读（TTS）</strong>：从当前位置按句朗读正文，朗读到哪高亮到哪；支持暂停 / 继续 / 停止、0.5–2.0× 语速实时调节、中文语音选择、跟随滚动开关；朗读位置按文件独立记忆，重开页面可续读。超长句自动二次切分（规避浏览器约 15 秒截断），后台切回可自愈。</li>
                   <li><strong>换行边界标尺</strong>：窗口顶端 Word 式标尺，拖动设定换行列边界，松开生效、双击恢复自动。</li>
                   <li><strong>进度自动保存</strong>：多文件独立记忆阅读位置，内容指纹防串档，一键恢复。</li>
                   <li><strong>纯净阅读模式</strong>：一键隐藏 UI，自定义字号、字体、宽度与背景色。</li>
@@ -646,10 +682,11 @@
                   <li>点击「📖 纯净阅读」进入沉浸模式，可调整字号、字体、页面宽度与背景色，按 R 或 Esc 退出。</li>
                   <li>阅读进度会<strong>自动保存</strong>；需要时点击翻页栏「<strong>↺ 恢复进度</strong>」回到上次阅读位置。</li>
                   <li>排版结果可落盘：点顶栏「<strong>⤓ 导出结果</strong>」或弹窗「<strong>保存为 TXT</strong>」；浏览器支持时可直接覆盖原文件（需确认），否则自动下载。</li>
+                  <li><strong>听书</strong>：点顶栏「<strong>🔊 朗读</strong>」进入纯净模式并从当前位置开始念；控制条在窗口顶端，可 ⏸ 暂停 / ⏹ 停止 / 调语速 / 换语音 / 开关「🎯 跟随」。停止后位置自动记住，下次打开该文件点朗读即接着念。</li>
                 </ul>
               </div>
 
-              <div class="help-tip">提示：编码/字号下拉框聚焦时，PageUp / PageDown 不会触发翻页，避免误操作。</div>
+              <div class="help-tip">提示：编码/字号下拉框聚焦时，PageUp / PageDown 不会触发翻页，避免误操作。朗读需系统已安装中文语音包，缺失时会明确提示并禁用按钮。</div>
             </div>
           </div>
         </div>
@@ -738,6 +775,16 @@
     <span class="sep"></span>
     <div class="grp">
       <button id="readThemeToggle" type="button" title="明暗主题切换">🌓</button>
+    </div>
+    <span class="sep"></span>
+    <div class="grp speak-bar">
+      <button id="spkPlay" type="button" title="开始 / 继续朗读">▶ 朗读</button>
+      <button id="spkPause" type="button" title="暂停朗读" disabled>⏸ 暂停</button>
+      <button id="spkStop" type="button" title="停止朗读并清除高亮" disabled>⏹ 停止</button>
+      <button id="spkFollow" type="button" class="active" title="跟随朗读自动滚动（关闭后高亮仍在，但不再自动滚动）">🎯 跟随</button>
+      <span class="spk-rate" id="spkRateVal">1.0×</span>
+      <input type="range" id="spkRate" min="0.5" max="2" step="0.1" value="1" title="语速 0.5–2.0×" aria-label="朗读语速" />
+      <select id="spkVoice" title="选择中文语音" aria-label="选择语音"></select>
     </div>
     <span class="sep"></span>
     <div class="grp actions">
@@ -993,6 +1040,7 @@
       if (laid) lines = laid.split('\n');       // 句子段落作为“逻辑行”，段落间空行自然形成段距
     }
     state.lines = lines;
+    Speak.setLines(lines);   // 朗读队列与逻辑行保持同步（切排版 / 换文件都会经过这里）
   }
 
   function decodeAndRender() {
@@ -1362,6 +1410,367 @@
     return { SENT_END, SHORT_SENT, splitSentences, simpleLayout, segmentByLongPunct };
   })();
 
+  /* ============================================================================
+   * 朗读模块（TTS · PLAN-2026-1001-B）
+   * 复用 Layout.splitSentences 断句，零依赖（浏览器原生 speechSynthesis）。
+   * 设计要点：
+   *  1) 队列按「逻辑行 → 句 → 子块」三级构建，每项携带 (li, s, e) 三个行内偏移，
+   *     高亮与滚动都锚定偏移而非行号，因此改字号/换行边界导致重排后仍不会错位。
+   *  2) 超长句二次切分（MAX_CHUNK）：规避 Chrome 对长 utterance 约 15 秒的截断。
+   *  3) 心跳兜底（watchdog）：后台标签页会被节流，onend 可能不触发；
+   *     超时未结束时主动重启下一块，避免「读着读着不动了」。
+   *  4) 高亮用行级 class 而非字符级 <mark>，避免与搜索 <mark class="kw"> 嵌套切碎 HTML。
+   * ==========================================================================*/
+  const Speak = (() => {
+    const synth = window.speechSynthesis;
+    const SUPPORTED = !!(synth && typeof window.SpeechSynthesisUtterance === 'function');
+    // 中文约 4–5 字/秒：60 字 ≈ 12–15 秒，卡在 Chrome 截断阈值之下
+    const MAX_CHUNK = 60;
+    const GAP_MS = 140;          // 子块之间留一点气口，避免连续 utterance 被吞字
+    const MS_PER_CHAR = 200;     // 保守估速（ms/字），仅用于看门狗超时判定
+    const WATCHDOG_BUFFER = 6000;
+
+    let voices = [], voice = null;
+    let queue = [];              // [{ li, text, s, e }]
+    let idx = 0;
+    let playing = false, paused = false;
+    let cur = null;              // 当前正在念的项
+    let gapTimer = null, watchdog = null, deadline = 0;
+    let rate = 1, follow = true;
+    let dirtySinceSave = 0;
+    // 代际令牌：synth.cancel() 后旧 utterance 的 onend/onerror 仍会派发，
+    // 若无条件推进索引会导致「跳句」。每次取消都 gen++，回调只认自己那一代。
+    let gen = 0;
+    const listeners = { change: [], state: [] };
+
+    const emit = (k) => { listeners[k].forEach((fn) => { try { fn(); } catch (e) {} }); };
+
+    /* ---------- 语音列表 ---------- */
+    function zhScore(v) {
+      const l = String(v.lang || '').toLowerCase().replace(/_/g, '-');
+      if (l === 'zh-cn' || l === 'zh-hans' || l === 'zh-sg') return 4;
+      if (l === 'zh-tw' || l === 'zh-hant' || l === 'zh-hk' || l === 'zh-mo') return 3;
+      if (l.indexOf('zh') === 0 || l.indexOf('cmn') === 0) return 2;
+      return 0;
+    }
+    function refreshVoices() {
+      if (!SUPPORTED) return;
+      const all = synth.getVoices() || [];
+      // 只保留中文语音并按时区优先级排序（大陆 > 繁体 > 其他中文）
+      voices = all.map((v) => ({ v, sc: zhScore(v) }))
+        .filter((x) => x.sc > 0)
+        .sort((a, b) => b.sc - a.sc || String(a.v.name).localeCompare(String(b.v.name)))
+        .map((x) => x.v);
+      // 保持用户已选；否则取分数最高者
+      if (!voice || voices.indexOf(voice) < 0) voice = voices[0] || null;
+      emit('state');
+    }
+    if (SUPPORTED) {
+      refreshVoices();
+      // getVoices() 首次常为空，必须等 voiceschanged 再取一次
+      if (typeof synth.addEventListener === 'function') synth.addEventListener('voiceschanged', refreshVoices);
+      else synth.onvoiceschanged = refreshVoices;
+    }
+    const hasChinese = () => voices.length > 0;
+
+    /* ---------- 队列构建 ---------- */
+    // 超长句按次要标点二次切分；找不到标点则硬切。返回 [{text, off}]（off 为句内偏移）
+    function chunkify(text) {
+      if (text.length <= MAX_CHUNK) return [{ text: text, off: 0 }];
+      const out = [];
+      let pos = 0;
+      while (pos < text.length) {
+        let end = Math.min(text.length, pos + MAX_CHUNK);
+        if (end < text.length) {
+          const half = pos + Math.floor(MAX_CHUNK * 0.5);
+          // 在 [半程, 上限] 内从后往前找可断处（次要标点）
+          for (let i = end - 1; i >= half; i--) {
+            if (/[，、；：,;:！？!?]/.test(text[i])) { end = i + 1; break; }
+          }
+        }
+        out.push({ text: text.slice(pos, end), off: pos });
+        pos = end;
+      }
+      return out;
+    }
+    function buildQueue(lines) {
+      const q = [];
+      for (let li = 0; li < lines.length; li++) {
+        const line = lines[li] || '';
+        if (!line.trim()) continue;                 // 排版产生的段间空行跳过
+        const sents = Layout.splitSentences(line);
+        let cursor = 0;
+        for (let si = 0; si < sents.length; si++) {
+          const s = sents[si];
+          // splitSentences 会折叠空白，故用 indexOf 回找原位置；找不到时按游标兜底，保证顺序不乱
+          let at = line.indexOf(s, cursor);
+          if (at < 0) at = cursor;
+          cursor = at + s.length;
+          const parts = chunkify(s);
+          for (let pi = 0; pi < parts.length; pi++) {
+            q.push({ li: li, text: parts[pi].text, s: at + parts[pi].off, e: at + parts[pi].off + parts[pi].text.length });
+          }
+        }
+      }
+      return q;
+    }
+    function setLines(lines) {
+      const wasPlaying = playing;
+      const speakingText = cur ? cur.text : '';
+      queue = buildQueue(lines || []);
+      // 全文重排后（如切换「正文排版」）队列已换：按文本回找原句，找不到就回到开头
+      if (speakingText) {
+        const at = queue.findIndex((x) => x.text === speakingText);
+        idx = at >= 0 ? at : 0;
+      }
+      if (idx >= queue.length) idx = 0;
+      if (wasPlaying && !queue.length) { stop(); return; }
+      if (wasPlaying) {
+        gen++;                                        // 作废旧回调
+        try { synth.cancel(); } catch (e) {}
+        clearTimers();
+        cur = null;
+        if (paused) { emit('change'); }
+        else schedule(Math.min(GAP_MS, 60));           // 用新队列续读当前句
+      }
+      emit('change');
+    }
+
+    /* ---------- 时间轴 ---------- */
+    function clearTimers() {
+      if (gapTimer) { clearTimeout(gapTimer); gapTimer = null; }
+      if (watchdog) { clearInterval(watchdog); watchdog = null; }
+      deadline = 0;
+    }
+    function schedule(ms) {
+      if (gapTimer) clearTimeout(gapTimer);
+      gapTimer = setTimeout(() => { gapTimer = null; speakCurrent(); }, ms);
+    }
+    function armWatchdog(item) {
+      if (watchdog) clearInterval(watchdog);
+      // 保守估时 + 缓冲；超时说明 onend 丢了（后台节流 / 引擎卡死）
+      deadline = Date.now() + Math.round(item.text.length * MS_PER_CHAR / Math.max(0.5, rate)) + WATCHDOG_BUFFER;
+      watchdog = setInterval(() => {
+        if (!playing || paused || !deadline) return;
+        if (Date.now() > deadline) {
+          // 判定卡死：作废旧回调并取消当前 utterance，跳到下一块
+          gen++;
+          try { synth.cancel(); } catch (e) {}
+          cur = null; deadline = 0;
+          if (watchdog) { clearInterval(watchdog); watchdog = null; }
+          if (idx < queue.length - 1) { idx++; schedule(4); } else { finish(); }
+        }
+      }, 1000);
+    }
+    function finish() {
+      stop();
+    }
+
+    /* ---------- 朗读主流程 ---------- */
+    function speakCurrent() {
+      if (!SUPPORTED || !queue.length || paused) return;
+      if (idx < 0 || idx >= queue.length) { finish(); return; }
+      const item = queue[idx];
+      const myGen = ++gen;                             // 本块专属代际
+      cur = item;
+      deadline = 0;
+      emit('change');                                  // 先亮高亮，避免声音先到
+      try { scrollToCurrent(); } catch (e) {}
+      tickSave();
+      const u = new SpeechSynthesisUtterance(item.text);
+      if (voice) { u.voice = voice; u.lang = voice.lang || 'zh-CN'; }
+      else u.lang = 'zh-CN';
+      u.rate = rate;
+      u.onstart = () => { if (myGen !== gen) return; armWatchdog(item); };
+      u.onend = () => {
+        if (myGen !== gen) return;                     // 旧代回调（已被取消/跳块）→ 忽略
+        clearTimers();
+        if (!playing) return;
+        if (idx >= queue.length - 1) { finish(); return; }
+        idx++;
+        schedule(GAP_MS);
+      };
+      u.onerror = (e) => {
+        if (myGen !== gen) return;
+        // interrupted / canceled 属主动取消（暂停、跳块、停止），不算错误
+        const t = e && e.error;
+        if (t === 'interrupted' || t === 'canceled') return;
+        clearTimers();
+        if (!playing) return;
+        if (idx >= queue.length - 1) { finish(); return; }
+        idx++;                                        // 跳过念不出的块，不卡死整条队列
+        schedule(GAP_MS);
+      };
+      try { synth.speak(u); } catch (e) { u.onerror && u.onerror({ error: 'speak-throw' }); }
+    }
+    function scrollToCurrent() {
+      if (!follow || !cur) return;
+      const rowIdx = rowForOffset(cur.li, cur.s);
+      if (rowIdx < 0 || !state.offsets.length) return;
+      const top = state.offsets[rowIdx];
+      const h = state.lineHeight;
+      const vt = viewport.scrollTop, vb = vt + viewport.clientHeight;
+      // 仅在目标行跑出可视区时才滚，避免每句都抖一下
+      if (top - h < vt || top + h > vb) {
+        isScrolling = false;                          // 不锁页码，用户仍可手动滚动
+        viewport.scrollTop = Math.max(0, top - h * 2);
+      }
+    }
+    // (行, 行内偏移) → 视觉行下标
+    function rowForOffset(li, off) {
+      const first = state.lineFirstVisualRow[li];
+      if (first == null) return -1;
+      for (let i = first; i < state.visualRows.length; i++) {
+        const vr = state.visualRows[i];
+        if (vr.lineIndex !== li) break;
+        if (off >= vr.start && off < vr.end) return i;
+      }
+      return first;
+    }
+
+    /* ---------- 对外控制 ---------- */
+    function start() {
+      if (!SUPPORTED) { showToast('当前浏览器不支持语音朗读'); return; }
+      if (!hasChinese()) { showToast('未检测到中文语音，请在系统中安装中文语音包'); return; }
+      if (!queue.length) { showToast('没有可朗读的内容'); return; }
+      if (playing && paused) { resume(); return; }
+      if (playing) return;
+      if (idx >= queue.length) idx = 0;
+      playing = true; paused = false;
+      emit('state');
+      speakCurrent();
+    }
+    function pause() {
+      if (!playing || paused) return;
+      paused = true;
+      deadline = 0;                                   // 暂停期间不判超时
+      try { synth.pause(); } catch (e) {}
+      savePos();
+      emit('state');
+    }
+    function resume() {
+      if (!playing || !paused) return;
+      paused = false;
+      emit('state');
+      // 原生 resume 后若引擎未续播，看门狗会兜底重启；先给一次机会
+      try { synth.resume(); } catch (e) {}
+      if (cur) armWatchdog(cur);
+      else schedule(4);
+    }
+    function stop() {
+      playing = false; paused = false; cur = null;
+      gen++;
+      clearTimers();
+      try { synth.cancel(); } catch (e) {}
+      savePos();
+      emit('change'); emit('state');
+    }
+    // 语速实时生效：取消当前块、以新速率从本句重念（阅读器通行做法，
+    // 因为 utterance.rate 在 speak() 之后无法再改）。
+    function setRate(r) {
+      const v = Math.max(0.5, Math.min(2, Number(r) || 1));
+      if (v === rate) return;
+      rate = v;
+      if (playing && !paused && cur) {
+        gen++;
+        try { synth.cancel(); } catch (e) {}
+        clearTimers();
+        schedule(4);
+      }
+      emit('state');
+    }
+    function jumpTo(i) {      if (!queue.length) return;
+      idx = Math.max(0, Math.min(i, queue.length - 1));
+      cur = null;
+      if (playing) {
+        gen++;                                         // 作废旧回调，避免旧 onend 再推进一次
+        try { synth.cancel(); } catch (e) {}
+        clearTimers();
+        paused = false;
+        schedule(4);
+      }
+      emit('change'); emit('state');
+    }
+
+    /* ---------- 位置记忆（独立 key：不干扰既有分页进度记录） ---------- */
+    const SPEAK_KEY = 'txtreader-speak-v1';
+    const SPEAK_MAX = 10;
+    function speakKey() {
+      if (!state.fileName) return null;
+      const id = state.fileId || (state.bytes ? fileFingerprint(state.bytes) : '');
+      return (state.filePath || state.fileName) + '|' + state.fileName + '|' + id;
+    }
+    function savePos() {
+      const key = speakKey();
+      if (!key) return;
+      dirtySinceSave = 0;
+      try {
+        let map = {};
+        const raw = localStorage.getItem(SPEAK_KEY);
+        if (raw) { try { map = JSON.parse(raw); } catch (e) { map = {}; } }
+        map[key] = { idx: idx, page: navPage, ts: Date.now() };
+        const keys = Object.keys(map);
+        if (keys.length > SPEAK_MAX) {
+          keys.sort((a, b) => (map[a].ts || 0) - (map[b].ts || 0));
+          while (keys.length > SPEAK_MAX) delete map[keys.shift()];
+        }
+        localStorage.setItem(SPEAK_KEY, JSON.stringify(map));
+      } catch (e) {}
+    }
+    function loadPos() {
+      const key = speakKey();
+      if (!key) return null;
+      try {
+        const map = JSON.parse(localStorage.getItem(SPEAK_KEY) || '{}');
+        const p = map[key];
+        if (p && typeof p.idx === 'number') return p;
+      } catch (e) {}
+      return null;
+    }
+    // 打开文件后调用：把上次念到的句子恢复为待读位置（不自动开念）
+    function restorePos() {
+      const p = loadPos();
+      idx = (p && p.idx >= 0 && p.idx < queue.length) ? p.idx : 0;
+      cur = null;
+      emit('change'); emit('state');
+    }
+    // 句子推进时低频落盘（每 10 句），避免每句都写 localStorage
+    function tickSave() {
+      if (++dirtySinceSave >= 10) savePos();
+    }
+
+    /* ---------- 供渲染层使用 ---------- */
+    function currentRange() { return cur ? { li: cur.li, s: cur.s, e: cur.e } : null; }
+
+    refreshVoices();
+
+    return {
+      SUPPORTED: SUPPORTED,
+      hasChinese: hasChinese,
+      voices: () => voices.slice(),
+      getVoice: () => voice,
+      setVoice: (v) => { voice = v || null; },
+      setRate: setRate,
+      getRate: () => rate,
+      setFollow: (on) => { follow = !!on; },
+      getFollow: () => follow,
+      setLines: setLines,
+      start: start, pause: pause, resume: resume, stop: stop, jumpTo: jumpTo,
+      isPlaying: () => playing,
+      isPaused: () => paused,
+      queueLength: () => queue.length,
+      index: () => idx,
+      currentText: () => (cur ? cur.text : ''),
+      currentRange: currentRange,
+      next: () => jumpTo(idx + 1),
+      prev: () => jumpTo(idx - 1),
+      restorePos: restorePos,
+      savePos: savePos,
+      tickSave: tickSave,
+      on: (k, fn) => { if (listeners[k]) listeners[k].push(fn); }
+    };
+  })();
+
   let ticking = false;
   function render() {
     const n = state.visualRows.length;
@@ -1373,13 +1782,17 @@
     start = Math.max(0, start - 4);
     end = Math.min(n - 1, end + 8);
     const gw = state.gutter + 'px';
+    // 朗读高亮：按 (行, 行内偏移) 判定，重排后依然锚定同一句话。
+    // 用行级 class 叠加，同一行内的搜索 <mark class="kw"> 不受影响（互不嵌套）。
+    const spk = Speak.currentRange();
     let html = '';
     for (let i = start; i <= end; i++) {
       const vr = state.visualRows[i];
       const txHtml = (vr.lineIndex === currentMatchLine && currentMatchStart >= 0 && currentMatchEnd > currentMatchStart)
         ? highlightVisualRow(vr, currentMatchStart, currentMatchEnd)
         : escapeHtml(vr.text);
-      html += '<div class="row" style="height:' + state.lineHeight + 'px">'
+      const isSpk = !!(spk && vr.lineIndex === spk.li && vr.end > spk.s && vr.start < spk.e);
+      html += '<div class="row' + (isSpk ? ' spk' : '') + '" style="height:' + state.lineHeight + 'px">'
             + '<span class="ln" style="width:' + gw + '">' + (i + 1) + '</span>'
             + '<span class="tx">' + txHtml + '</span></div>';
     }
@@ -1658,6 +2071,7 @@
   }
   function openFile(index) {
     if (index < 0 || index >= project.files.length) return;
+    Speak.stop();                                   // 切换文件必须停止朗读，避免念着上一份内容
     if (state.fileName && navPage >= 1) {
       const currentKey = progressKey();
       if (currentKey) {
@@ -1679,8 +2093,11 @@
     navPage = 1; isScrolling = false;
     content.style.opacity = '0';
     decodeAndRender();
+    Speak.restorePos();                 // 队列已按新文件重建，恢复上次念到的句子（不自动开念）
     updatePageInfo();
     updateRestoreBtn();
+    updateExportBtn();                  // 修复：此前 openFile 未同步，导致打开文件后「导出结果」始终禁用
+    updateSpeakUI();                    // 文件就绪 → 放行朗读入口
     requestAnimationFrame(() => { content.style.opacity = '1'; });
     buildFileList(fileSearch.value);
   }
@@ -1700,6 +2117,7 @@
   }
 
   function clearAllFiles() {
+    Speak.stop();                       // 先停朗读并落盘位置（此时 state 仍指向待清空的文件）
     project.files = [];
     activeIndex = -1;
     state.bytes = null;
@@ -1735,6 +2153,7 @@
     empty.classList.remove('hidden');
     updateRestoreBtn();   // 清空后无进度，禁用「恢复进度」按钮
     updateExportBtn();    // 无文件则禁用导出按钮
+    updateSpeakUI();      // 无文件则禁用朗读入口
   }
 
   /* ---------- 搜索定位 ---------- */
@@ -2111,8 +2530,10 @@
   restoreBtn.addEventListener('click', restoreProgress);
   clearProgressBtn.addEventListener('click', clearAllProgress);
   // 关闭 / 切后台前强制落盘最后一次阅读进度，避免节流未触发就关页导致丢失
-  window.addEventListener('pagehide', flushSave);
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushSave(); });
+  window.addEventListener('pagehide', () => { flushSave(); Speak.savePos(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') { flushSave(); Speak.savePos(); }
+  });
   updateRestoreBtn();   // 初始（无文件）禁用「恢复进度」按钮
 
   /* ---------- 简单排版弹窗 ---------- */
@@ -2145,7 +2566,111 @@
     render();
     buildSearchList(locSearch.value);
     updateExportBtn();
+    updateSpeakUI();                    // 文件已就绪 → 放行朗读入口
   });
+
+  /* ---------- 朗读 UI（PLAN-B） ---------- */
+  const speakBtn   = $('speakBtn');
+  const spkPlay    = $('spkPlay');
+  const spkPause   = $('spkPause');
+  const spkStop    = $('spkStop');
+  const spkFollow  = $('spkFollow');
+  const spkRate    = $('spkRate');
+  const spkRateVal = $('spkRateVal');
+  const spkVoice   = $('spkVoice');
+
+  // 语音下拉：仅列中文语音；无中文时给出明确提示并禁用朗读入口
+  function buildVoiceOptions() {
+    const list = Speak.voices();
+    spkVoice.innerHTML = '';
+    if (!list.length) {
+      const o = document.createElement('option');
+      o.value = ''; o.textContent = '无中文语音';
+      spkVoice.appendChild(o);
+      spkVoice.disabled = true;
+      return;
+    }
+    spkVoice.disabled = false;
+    const cur = Speak.getVoice();
+    list.forEach((v, i) => {
+      const o = document.createElement('option');
+      o.value = String(i);
+      o.textContent = v.name + ' (' + v.lang + ')';
+      if (cur && v.name === cur.name && v.lang === cur.lang) o.selected = true;
+      spkVoice.appendChild(o);
+    });
+  }
+  // 按钮状态互斥：由 Speak 的真实状态推导，避免多处手改导致残留
+  function updateSpeakUI() {
+    const ok = !!state.bytes;
+    const canSpeak = Speak.SUPPORTED && Speak.hasChinese();
+    speakBtn.disabled = !ok || !canSpeak;
+    spkPlay.disabled = !ok || !canSpeak;
+    spkPlay.textContent = (Speak.isPlaying() && Speak.isPaused()) ? '▶ 继续' : '▶ 朗读';
+    spkPause.disabled = !Speak.isPlaying() || Speak.isPaused();
+    spkStop.disabled = !Speak.isPlaying();
+    speakBtn.classList.toggle('active', Speak.isPlaying());
+    speakBtn.textContent = Speak.isPlaying() ? '🔊 朗读中' : '🔊 朗读';
+    speakBtn.title = canSpeak
+      ? '从当前位置开始朗读（TTS）'
+      : '系统未安装中文语音，朗读不可用';
+    spkFollow.classList.toggle('active', Speak.getFollow());
+    spkFollow.setAttribute('aria-pressed', String(Speak.getFollow()));
+    spkRateVal.textContent = Speak.getRate().toFixed(1) + '×';
+  }
+  Speak.on('state', updateSpeakUI);
+  Speak.on('change', () => { render(); });      // 换句 → 重绘高亮（行级，开销极小）
+  buildVoiceOptions();
+  updateSpeakUI();
+
+  Speak.on('state', () => {                     // 语音列表异步就绪后补一次下拉
+    if (spkVoice.options.length === 0 || spkVoice.disabled) buildVoiceOptions();
+  });
+
+  speakBtn.addEventListener('click', () => {
+    if (!state.bytes) { showToast('请先打开文件'); return; }
+    if (!Speak.SUPPORTED) { showToast('当前浏览器不支持语音朗读'); return; }
+    if (!Speak.hasChinese()) { showToast('未检测到中文语音，请在系统中安装中文语音包后重试'); return; }
+    if (!Speak.isPlaying()) {
+      enterReadingModeForSpeech();
+      Speak.start();
+      if (!Speak.isPlaying()) return;
+      showToast(Speak.index() > 0 ? '从上次位置继续朗读' : '开始朗读');
+    } else if (Speak.isPaused()) {
+      Speak.resume();
+    } else {
+      Speak.pause();
+    }
+  });
+  spkPlay.addEventListener('click', () => {
+    if (Speak.isPlaying() && Speak.isPaused()) Speak.resume();
+    else Speak.start();
+  });
+  spkPause.addEventListener('click', () => Speak.pause());
+  spkStop.addEventListener('click', () => { Speak.stop(); showToast('已停止朗读'); });
+  spkFollow.addEventListener('click', () => {
+    const on = !Speak.getFollow();
+    Speak.setFollow(on);
+    updateSpeakUI();
+    showToast(on ? '已开启跟随朗读滚动' : '已关闭跟随：高亮保留，不再自动滚动');
+  });
+  spkRate.addEventListener('input', () => {
+    Speak.setRate(parseFloat(spkRate.value));
+    spkRateVal.textContent = Speak.getRate().toFixed(1) + '×';
+  });
+  spkVoice.addEventListener('change', () => {
+    const i = parseInt(spkVoice.value, 10);
+    const list = Speak.voices();
+    if (isFinite(i) && list[i]) {
+      Speak.setVoice(list[i]);
+      showToast('已切换语音：' + list[i].name);
+    }
+  });
+  // 非纯净模式下点「朗读」直接进纯净模式，避免顶栏被隐藏时控制条不可达
+  function enterReadingModeForSpeech() {
+    if (document.body.classList.contains('reading-mode')) return;
+    if (typeof toggleReadingMode === 'function') toggleReadingMode(true);
+  }
   // 排版结果是否被用户手动修改过。改过之后暂停自动排版——
   // 否则在原文 textarea 里敲一个字，就会把用户对结果的修改整段冲掉。
   let slDirty = false;
