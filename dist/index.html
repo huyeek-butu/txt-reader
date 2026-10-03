@@ -79,6 +79,19 @@
     box-shadow: 0 10px 40px -20px var(--glow);
     transition: background-color .4s var(--ease), border-color .4s var(--ease);
   }
+
+  /* 纵向空间不变量：顶栏与翻页栏在**任何视口**下都不得超过视口高度的一定比例。
+     .app 是固定高度的 flex 列、正文 min-height:0 —— 顶栏控件 wrap 后会把正文挤没：
+     实测 375×812 顶栏 403px → 正文 97px；812×375 顶栏 186px → 正文 0px（完全不可读）。
+     约束对象是**高度**而非宽度：812×375 的宽是 812 > 768，窄屏媒体查询不匹配，
+     所以这条不能塞进 @media (max-width:768px)，否则横屏永远兜不住。
+     桌面 1 行顶栏约 68px、翻页栏约 61px，远低于上限，本规则在桌面不生效。
+     align-content: flex-start 防止行在盒内被拉伸；超出部分各自内部滚动，控件不丢。
+     flex: 0 0 auto 不可省：overflow 会把 flex 项的自动最小尺寸变成 0，
+     于是「顶栏」会反过来被正文挤扁 —— 实测打开文件后顶栏被压到 26px、翻页栏 18px。
+     锁住不收缩后，两栏合计 ≤43vh，正文恒得 ≥57vh-60px（812 高时 403px，375 高时 154px）。 */
+  .topbar { flex: 0 0 auto; max-height: 25vh; overflow-y: auto; align-content: flex-start; }
+  .pagebar { flex: 0 0 auto; max-height: 18vh; overflow-y: auto; align-content: flex-start; }
   .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 16px; letter-spacing: .2px; margin-right: auto; }
   .brand .dot { width: 12px; height: 12px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent2)); box-shadow: 0 0 14px var(--glow); }
   .brand small { color: var(--muted); font-weight: 500; font-size: 12px; }
@@ -190,6 +203,8 @@
     flex: 0 0 auto; position: relative; height: 26px; overflow: hidden;
     background: var(--surface-solid); border-bottom: 1px solid var(--border);
     cursor: ew-resize; user-select: none; -webkit-user-select: none;
+    /* 触摸拖动标尺时必须阻止页面滚动，否则 Pointer Events 会被滚动手势抢走 */
+    touch-action: none;
   }
   .ruler canvas { position: absolute; inset: 0; display: block; }
   body.nowrap .ruler, body.reading-mode .ruler { display: none; }
@@ -277,15 +292,20 @@
   .panel-head .panel-actions button { padding: 4px 8px; font-size: 12px; border-radius: 7px; background: transparent; border: none; color: var(--muted); cursor: pointer; }
   .panel-head .panel-actions button:hover { background: var(--row-hover); color: var(--text); }
 
-  /* 翻页栏 */
+  /* 翻页栏。必须允许换行，且在**任何视口**下都允许：
+     ① 实测 375px 视口下右侧的「速度」控件组（.speed-box）会把文档宽度撑到 506px，
+        既产生横向滚动条，又让移动端的 window.innerWidth 报成「内容宽」而非设备宽，
+        进而把一切按视口换算的坐标全部带偏。
+     ② @media (pointer: coarse) 给按钮加了 white-space: nowrap 之后按钮不再被压扁，
+        7 个控件自然宽合计约 747px —— 812×375 横屏时容器只有 490px，不换行就必然横向溢出。
+        约束对象是**容器宽度**，而窄屏媒体查询只看宽度、横屏宽 812 不匹配，故放在基础规则里。 */
   .pagebar {
-    display: flex; align-items: center; gap: 10px; padding: 8px 14px;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap; row-gap: 8px; padding: 8px 14px;
     font-size: 13px; background: var(--surface); backdrop-filter: blur(18px) saturate(160%);
     -webkit-backdrop-filter: blur(18px) saturate(160%);
     border: 1px solid var(--border); border-radius: var(--radius);
     transition: background-color .4s var(--ease), border-color .4s var(--ease);
   }
-  .pagebar .spacer { flex: 1 1 auto; }
   #pageInfo { font-variant-numeric: tabular-nums; min-width: 70px; text-align: center; font-weight: 600; }
   .btn-icon { padding: 8px 12px; font-weight: 600; }
   .btn-icon.active { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border: none; }
@@ -387,11 +407,40 @@
     .modal-foot .sl-stat { flex-basis: 100%; margin-left: 0; text-align: right; }
   }
 
-  /* 窄屏：侧栏浮层 */
-  @media (max-width: 860px) {
-    .sidebar { position: fixed; left: 16px; top: 86px; bottom: 86px; z-index: 40;
-      box-shadow: 0 24px 70px -20px rgba(0,0,0,.55); background: var(--bg); }
-    .app.sidebar-collapsed .sidebar { left: -340px; margin-left: 0; }
+  /* 窄屏：侧栏改**抽屉式**（PLAN-C 要点 4）。
+     阈值取 768px；展开时在 app 上盖一层遮罩，点遮罩（即侧栏以外任意处）收起 ——
+     遮罩用伪元素做纯视觉与点击面，收起动作由 .app 的 click 委托统一处理。 */
+  @media (max-width: 768px) {
+    .sidebar {
+      position: fixed; left: 16px; top: 86px; bottom: 86px; z-index: 40;
+      width: min(320px, calc(100vw - 32px)); flex-basis: auto;
+      box-shadow: 0 24px 70px -20px rgba(0,0,0,.55); background: var(--bg);
+      transition: left .28s var(--ease), opacity .28s var(--ease);
+    }
+    .app.sidebar-collapsed .sidebar { left: -360px; margin-left: 0; opacity: 0; width: min(320px, calc(100vw - 32px)); }
+    .app:not(.sidebar-collapsed)::after {
+      content: ''; position: fixed; inset: 0; z-index: 35;
+      background: rgba(0, 0, 0, .46);
+      -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+      animation: scrimIn .28s var(--ease);
+    }
+  }
+  @keyframes scrimIn { from { opacity: 0; } to { opacity: 1; } }
+
+  /* 触摸设备：交互目标不小于 44×44px（PLAN-C 验收判据）。
+     只放行高度/最小宽度，不锁死尺寸，避免在桌面触屏笔记本上撑坏紧凑布局。
+     必须同时 white-space: nowrap：min-width:44px 会把放不下的按钮压到 44px 宽，
+     没有 nowrap 时按钮内的**文字会按单字竖向折行**（实测「自动播放」被撑成 44×137），
+     既撑高翻页栏又把正文挤没。nowrap 后按钮保持自然宽度，改由 flex 换行解决拥挤。 */
+  @media (pointer: coarse) {
+    .ctrl > button, .seg > button, .pagebar button, .panel-head .chev,
+    .read-bar button, .read-bar .seg > button { min-height: 44px; white-space: nowrap; }
+    .ctrl > button, .pagebar button, .panel-head .chev { min-width: 44px; }
+    .list-item { padding: 12px 12px; }
+    /* 标尺：触摸区域抬到 44px，但绘制 canvas 仍是 26px 贴顶（JS 设 inline height），
+       所以视觉高度不变、只是手指更容易按住。 */
+    .ruler { height: 44px; }
+    .search-btn { min-width: 44px; min-height: 44px; }
   }
 
   /* ============ 纯净阅读模式 ============ */
@@ -665,7 +714,7 @@
       <!-- 阅读列 -->
       <main class="reader-col">
         <div class="reader-wrap">
-          <div class="ruler" id="wrapRuler" title="换行边界标尺：按住拖动 ▼ 调整列位置（拖动中不重排），松开鼠标后正文按新边界换行；双击恢复自动宽度">
+          <div class="ruler" id="wrapRuler" title="换行边界标尺：按住拖动 ▼ 调整列位置（拖动中不重排），松开后正文按新边界换行；双击恢复自动宽度。触摸屏可直接拖动，双击同样生效">
             <canvas id="rulerCanvas"></canvas>
           </div>
           <div class="viewport" id="viewport">
@@ -678,7 +727,7 @@
               <div class="help-header">
                 <div class="help-icon">📄</div>
                 <div class="help-title">TXT 阅读器</div>
-                <div class="help-version">v1.16</div>
+                <div class="help-version">v1.17</div>
               </div>
 
               <div class="help-section">
@@ -980,7 +1029,14 @@
   let decodeVersion = 0;
   let decodeCache = { version: -1, enc: null, text: '', charCount: 0 };
   let simpleCache = { version: -1, text: null, result: null };
-  function invalidateDecode() { decodeVersion++; }
+  function invalidateDecode() {
+    decodeVersion++;
+    // 仅自增版本号不够：那两个缓存对象仍引用着上一份载荷 ——
+    // 关掉全部文件后，10 万行的解码文本（约 8.4 MB）与断句结果还挂在堆上，内存不回落，
+    // 而 PLAN-C 验收判据要求「打开关闭文件 20 次后内存回落」。故连载荷一并丢弃。
+    decodeCache = { version: -1, enc: null, text: '', charCount: 0 };
+    simpleCache = { version: -1, text: null, result: null };
+  }
   // 字符数（不含换行）与正文同源同寿命：一起算、一起缓存，避免每次重排再扫一遍全文。
   function currentTextInfo() {
     if (decodeCache.version !== decodeVersion || decodeCache.enc !== state.enc) {
@@ -1331,32 +1387,44 @@
     wrapGuide.style.height = Math.max(state.totalHeight, viewport.clientHeight) + 'px';
   }
 
-  // 拖动交互：mousedown/mousemove 只更新标记与虚线；mouseup 才按新边界重排正文
+  // 拖动交互：pointerdown/pointermove 只更新标记与虚线；pointerup 才按新边界重排正文。
+  // 用 Pointer Events 统一鼠标与触摸 —— 原实现只监听 mouse*，触摸屏上标尺完全拖不动。
+  // 配合 setPointerCapture：手指滑出标尺范围后仍持续跟踪（触摸交互的必要条件），
+  // 因此 move/up 直接挂在 rulerEl 上即可，不必再挂 window。
+  let rulerPointerId = null;
   function rulerColFromEvent(e) {
     const rect = rulerEl.getBoundingClientRect();
     const g = rulerGeo();
     return Math.max(1, Math.min(Math.round((e.clientX - rect.left - g.contentLeft) / g.unit), g.maxCols));
   }
-  rulerEl.addEventListener('mousedown', e => {
-    if (e.button !== 0 || !state.bytes || !state.wrap) return;
+  rulerEl.addEventListener('pointerdown', e => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;   // 鼠标只认左键；触摸/笔不受此限
+    if (!state.bytes || !state.wrap) return;
     e.preventDefault();
+    rulerPointerId = e.pointerId;
+    try { rulerEl.setPointerCapture(e.pointerId); } catch (err) {}
     rulerDrag = true;
     const col = rulerColFromEvent(e);
     drawRuler(col); updateWrapGuide(col);
   });
-  window.addEventListener('mousemove', e => {
-    if (!rulerDrag) return;
+  rulerEl.addEventListener('pointermove', e => {
+    if (!rulerDrag || e.pointerId !== rulerPointerId) return;
+    e.preventDefault();
     const col = rulerColFromEvent(e);
     drawRuler(col); updateWrapGuide(col);
   });
-  window.addEventListener('mouseup', e => {
-    if (!rulerDrag) return;
+  function endRulerDrag(e) {
+    if (!rulerDrag || (e && rulerPointerId !== null && e.pointerId !== rulerPointerId)) return;
     rulerDrag = false;
-    state.wrapCol = rulerColFromEvent(e);
+    try { if (rulerPointerId !== null) rulerEl.releasePointerCapture(rulerPointerId); } catch (err) {}
+    if (e && e.clientX !== undefined) state.wrapCol = rulerColFromEvent(e);
+    rulerPointerId = null;
     persistWrapCol();
-    computeLayout(); render(); refreshSearchAfterLayout();   // 松开：按新边界重排
-  });
-  rulerEl.addEventListener('dblclick', () => {   // 双击恢复自动（视口宽度）
+    computeLayout(); render(); refreshSearchAfterLayout();   // 松开：按新边界重排（沿用 v1.8 交互约定）
+  }
+  rulerEl.addEventListener('pointerup', endRulerDrag);
+  rulerEl.addEventListener('pointercancel', endRulerDrag);
+  rulerEl.addEventListener('dblclick', () => {   // 双击恢复自动（视口宽度）；触摸双击同样派发 dblclick
     state.wrapCol = 0; persistWrapCol();
     computeLayout(); render(); refreshSearchAfterLayout();
   });
@@ -2763,6 +2831,15 @@
   }
 
   sideToggle.addEventListener('click', () => app.classList.toggle('sidebar-collapsed'));
+  // 窄屏抽屉（PLAN-C 要点 4）：点侧栏以外任意处收起侧栏 —— 遮罩就是同一块点击面。
+  // 宽屏不介入（宽屏侧栏是常驻栏，点正文不该把它关掉）。
+  app.addEventListener('click', (e) => {
+    if (window.innerWidth > 768) return;
+    if (app.classList.contains('sidebar-collapsed')) return;
+    if (!e.target || !e.target.closest) return;
+    if (e.target.closest('.sidebar') || e.target.closest('#sideToggle')) return;
+    app.classList.add('sidebar-collapsed');
+  });
   document.querySelectorAll('.panel-head .chev').forEach(btn => {
     btn.addEventListener('click', () => {
       const panel = document.getElementById(btn.dataset.target);
@@ -3120,14 +3197,27 @@
   });
 
   let rzTimer = null;
+  let lastLayoutWidth = window.innerWidth;
   window.addEventListener('resize', () => {
     if (!state.bytes) return;
     clearTimeout(rzTimer);
-    rzTimer = setTimeout(() => {
+    // 只有**宽度**变化才会改变正文行宽，才需要重排视觉行。
+    // 移动端软键盘弹出/收起只改变视口高度，原先同样会触发一次全量重排 ——
+    // 输入法一起一落就是两轮，正是 PLAN-C 里点名的「重排风暴」。
+    // 高度变化仍会影响每屏行数（分页），所以那只重建分页，不动视觉行。
+    if (window.innerWidth === lastLayoutWidth) {
+      rzTimer = setTimeout(() => {
+        if (document.body.classList.contains('reading-mode')) updateReadPad();
+        buildPages(); updatePageInfo();
+      }, 150);
+      return;
+    }
+    lastLayoutWidth = window.innerWidth;
+    rzTimer = setTimeout(() => {                     // 旋转屏幕 / 缩放窗口：防抖后重排一次
       if (document.body.classList.contains('reading-mode')) updateReadPad();
       computeLayout(); render();
       refreshSearchAfterLayout();
-    }, 120);
+    }, 150);
   });
 
   viewport.addEventListener('scroll', onScroll, { passive: true });

@@ -106,7 +106,7 @@ class CDP {
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 /* ---------- 浏览器进程管理 ---------- */
-async function launchBrowser({ port, profileDir, windowSize = '1400,900', extraArgs = [] } = {}) {
+async function launchBrowser({ port, profileDir, windowSize = '1400,900', extraArgs = [], url = 'about:blank' } = {}) {
   const exe = findBrowser();
   fs.mkdirSync(profileDir, { recursive: true });
   const args = [
@@ -122,7 +122,7 @@ async function launchBrowser({ port, profileDir, windowSize = '1400,900', extraA
     '--window-size=' + windowSize,
     '--remote-debugging-port=' + port,
     '--user-data-dir=' + profileDir,
-    'about:blank',
+    url,
     ...extraArgs,
   ];
   const child = spawn(exe, args, { stdio: ['ignore', 'ignore', 'pipe'] });
