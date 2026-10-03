@@ -8,7 +8,7 @@
 
 A **browser-based, single-file** TXT reading tool, purpose-built for long-form Chinese content such as novels, logs, and scripts. It auto-detects GBK / Big5 / UTF-8 encodings, paginates by real rendered lines, and offers wildcard search, sentence-based layout, a draggable wrap-boundary ruler, distraction-free reading, eye-care themes, and keyboard shortcuts — bringing you back to immersive reading.
 
-> **v1.13** · Pure front-end · Zero dependencies · Works out of the box
+> **v1.14** · Pure front-end · Zero dependencies · Works out of the box
 
 ---
 
@@ -29,6 +29,7 @@ A browser-based TXT reading tool designed for long-form Chinese content such as 
   - Sentence-boundary detection (whether a newline is kept, whether to split) uses the same "sentence-ending punctuation run + optional closing marks" rule, so line breaks like `“你好！”\n他走了。` are no longer lost;
   - Decorative long-punctuation dividers are still removed, but an in-sentence ellipsis with a closing mark (e.g. `……”`) is preserved and re-attached to the previous paragraph — no characters are dropped.
 - **Wrap-boundary ruler**: A Word-style horizontal ruler above the reading area — drag to set the wrap column (live preview while dragging, re-layout on release), double-click to restore auto width; the setting is persisted.
+- **Text-to-speech (TTS)**: Reads the text sentence by sentence. The line being spoken carries **unmistakable markers** (leading `▶` + bottom underline + left bar + full-line tint) that move with playback. Start rule: the **first line of the current page** by default; **click any line** in the body to set a manual start line (click again to clear), and the selected line takes priority over the page start. Supports pause / resume / stop, a real-time 0.5–2.0× rate slider, Chinese voice picker, and a follow-scroll toggle.
 - **Automatic progress saving**: Reading positions are remembered per file independently, keyed by a content fingerprint (FNV-1a) to prevent cross-file mix-ups; one-click restore / clear.
 - **Distraction-free mode**: One-click hide the UI; customize font size, font family, width, and background color.
 - **Eye-care themes**: Warm paper-like light mode / non-pure-black soft-contrast dark mode / follow-system, one-click toggle.
@@ -60,12 +61,13 @@ A browser-based TXT reading tool designed for long-form Chinese content such as 
 5. Drag the **ruler** above the reading area to set the wrap boundary (takes effect on release); double-click to restore auto
 6. Click "📖 Distraction-Free Reading" for immersive mode; adjust font size, font family, page width, and background color; press R or Esc to exit
 7. Reading progress is **saved automatically**; click "**↺ Restore Progress**" on the page bar to return to where you left off
+8. Click "**🔊 Speak**" in the top bar to start listening in distraction-free mode (starts at the **first line of the current page** by default); to start from a given line, **click that line** first, then hit Speak; click the same line again to clear it
 
 > **Tip**: When the encoding/font-size dropdowns are focused, PageUp / PageDown won't trigger page-turns, preventing accidental navigation.
 
 ## 🛣 Roadmap
 
-Formal plans live in [`docs/plans/`](docs/plans/README.md). **Current frozen baseline: `v1.12-stable`** (code stability line); plan docs baseline `plans-v1.0-frozen`.
+Formal plans live in [`docs/plans/`](docs/plans/README.md). **Current code version: `v1.14-speak-start`** (latest stable freeze line: `v1.12-stable`); plan docs baseline `plans-v1.0-frozen`.
 
 | ID | Name | Priority | Effort | Status |
 |---|---|---|---|---|
@@ -90,6 +92,7 @@ Formal plans live in [`docs/plans/`](docs/plans/README.md). **Current frozen bas
 
 | Version | Tag | Date | Notes |
 |------|------|------|------|
+| v1.14 | `v1.14-speak-start` | 2026-10-03 | Speech start position & line marker sync: the spoken line now carries multiple markers (leading ▶ + bottom underline + left bar + tint) that move with playback; reading now starts at the **first line of the current page** instead of the last interrupted position, and clicking any line in the body sets a manual start line (click again to clear) which takes priority over the page start — re-triggering after stop re-resolves accordingly |
 | v1.13 | `v1.13-speak` | 2026-10-03 | Text-to-speech (PLAN-B): read the text sentence by sentence with per-sentence highlight follow; pause/resume/stop; 0.5–2.0× rate applied in real time; Chinese voice picker; follow-scroll toggle. Long sentences are re-chunked to dodge the ~15s browser cut-off; a watchdog self-heals background throttling; the spoken position is stored per file for resume. Also fixes a PLAN-A leftover where the export button stayed disabled after opening a file |
 | v1.12 | `v1.12-modal-foot` / **`v1.12-stable`** | 2026-10-01 | Simple-layout dialog: all action buttons consolidated into a persistent bottom bar (does not scroll with content); the redundant primary "Re-layout" button removed and re-layout is now on-demand — it only appears in the footer once the result has been edited manually; buttons stretch to fill evenly on narrow screens |
 | v1.11 | `v1.11-editable-output` | 2026-10-01 | Editable layout result: the output box is no longer read-only — edit it directly before copying/saving; a manual edit pauses auto-layout with an inline notice, and "Re-layout" overwrites it; matching the auto output again restores auto mode |

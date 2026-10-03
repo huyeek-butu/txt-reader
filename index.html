@@ -199,7 +199,7 @@
   .row { display: flex; align-items: flex-start; box-sizing: border-box; transition: background-color .12s linear; }
   .row:hover { background: var(--row-hover); }
   .ln { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: flex-end; text-align: right; padding: 0 14px 0 16px; color: var(--muted); user-select: none; border-right: 1px solid var(--border); font-variant-numeric: tabular-nums; white-space: nowrap; line-height: var(--line-height, 1.8); height: 100%; font-size: var(--font-size, 14px); }
-  .tx { flex: 1 1 auto; min-height: 0; height: 100%; padding: 0 16px; white-space: pre-wrap; word-break: break-word; line-height: var(--line-height, 1.8); overflow: hidden; font-size: var(--font-size, 14px); }
+  .tx { position: relative; flex: 1 1 auto; min-height: 0; height: 100%; padding: 0 16px; white-space: pre-wrap; word-break: break-word; line-height: var(--line-height, 1.8); overflow: hidden; font-size: var(--font-size, 14px); }
   body.nowrap .tx { white-space: pre; }
 
   .empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 14px; text-align: center; color: var(--muted); pointer-events: none; padding: 24px; overflow: auto; }
@@ -446,14 +446,35 @@
   body.reading-mode .read-bar.compact .settings-btn .settings-icon { display: inline; }
 
   /* ============ 朗读（TTS） ============ */
-  /* 正在朗读的视觉行：整行底色 + 左侧竖条。用行级高亮而非字符级 mark，
-     避免与搜索的 <mark class="kw"> 在同一行内互相嵌套、切碎 HTML。 */
+  /* 手动选定的起始行：左侧竖条 + 行号变色。写在 .row.spk 之前——
+     两行重合时由后面的 .spk 接管竖条颜色，视觉上「正在念」优先。 */
+  #content .row.anchor {
+    background: color-mix(in srgb, var(--accent2) 12%, transparent);
+    box-shadow: inset 3px 0 0 0 var(--accent2);
+  }
+  #content .row.anchor .ln { color: var(--accent2); font-weight: 600; }
+  /* 正在朗读的视觉行：整行底色 + 左侧竖条 + 行首 ▶ + 底部下划线。
+     四重标记叠加，保证「念到哪一行」一眼可辨。
+     用行级高亮而非字符级 mark，避免与搜索的 <mark class="kw"> 在同一行内互相嵌套、切碎 HTML。 */
   #content .row.spk {
     background: color-mix(in srgb, var(--accent) 20%, transparent);
     box-shadow: inset 3px 0 0 0 var(--accent);
     border-radius: 4px;
   }
-  #content .row.spk .tx { color: var(--text); }
+  #content .row.spk .tx {
+    color: var(--text);
+    /* 下划线用 inset 阴影而非 border-bottom：border 会占掉 1px 内容高度，
+       固定行高下会导致末行文字被 overflow 截断 */
+    box-shadow: inset 0 -2px 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+  #content .row.spk .ln { color: var(--accent); font-weight: 600; }
+  /* 行首 ▶：定位在 .tx 的左内边距（16px）里，既不推挤正文也不占 gutter 宽度 */
+  #content .row.spk .tx::before {
+    content: '▶';
+    position: absolute; left: 2px; top: 0; bottom: 0;
+    display: flex; align-items: center;
+    color: var(--accent); font-size: 10px; line-height: 1;
+  }
   /* 跟随朗读时的滚动目标留白，避免高亮行贴顶 */
   .speak-bar {
     display: inline-flex; align-items: center; gap: 6px;
@@ -628,7 +649,7 @@
               <div class="help-header">
                 <div class="help-icon">📄</div>
                 <div class="help-title">TXT 阅读器</div>
-                <div class="help-version">v1.13</div>
+                <div class="help-version">v1.14</div>
               </div>
 
               <div class="help-section">
@@ -645,7 +666,7 @@
                   <li><strong>简单排版 · 按句分段</strong>：主窗口正文与「✒ 简单排版」弹窗共用同一规则——每句一段、段间空行、连续短对话合并不空行；逗号等非句末标点后的换行自动合并；破折号 —— / 省略号 …… 连排作强制分段。<strong>排版结果框可直接编辑</strong>，手动改过之后自动排版暂停，避免改动被冲掉。</li>
                   <li><strong>导出 / 保存</strong>：主窗口「⤓ 导出结果」与弹窗「保存为 TXT」支持把排版结果存为文件；浏览器支持时可直接覆盖原文件（需确认），不支持时自动降级为下载，绝不出现"点了没反应"。</li>
                   <li><strong>连续标点组合处理</strong>：<code>！！</code> <code>？！</code> <code>。。</code> 等连排／混排视为一个句末边界，原样保留不折叠；句末标点后的收尾引号括号（<code>！”</code> <code>。</code> <code>……”</code>）归入前一句，不会另起一行或被切到下一句首。</li>
-                  <li><strong>语音朗读（TTS）</strong>：从当前位置按句朗读正文，朗读到哪高亮到哪；支持暂停 / 继续 / 停止、0.5–2.0× 语速实时调节、中文语音选择、跟随滚动开关；朗读位置按文件独立记忆，重开页面可续读。超长句自动二次切分（规避浏览器约 15 秒截断），后台切回可自愈。</li>
+                  <li><strong>语音朗读（TTS）</strong>：默认从<strong>当前页第一行</strong>按句朗读正文；正在朗读的行有明确标记（行首 ▶ + 下划线 + 左侧竖条 + 底色），随朗读进度同步移动。点击正文任意一行可手动选定朗读起点（再次点击取消）。支持暂停 / 继续 / 停止、0.5–2.0× 语速实时调节、中文语音选择、跟随滚动开关。超长句自动二次切分（规避浏览器约 15 秒截断），后台切回可自愈。</li>
                   <li><strong>换行边界标尺</strong>：窗口顶端 Word 式标尺，拖动设定换行列边界，松开生效、双击恢复自动。</li>
                   <li><strong>进度自动保存</strong>：多文件独立记忆阅读位置，内容指纹防串档，一键恢复。</li>
                   <li><strong>纯净阅读模式</strong>：一键隐藏 UI，自定义字号、字体、宽度与背景色。</li>
@@ -682,11 +703,11 @@
                   <li>点击「📖 纯净阅读」进入沉浸模式，可调整字号、字体、页面宽度与背景色，按 R 或 Esc 退出。</li>
                   <li>阅读进度会<strong>自动保存</strong>；需要时点击翻页栏「<strong>↺ 恢复进度</strong>」回到上次阅读位置。</li>
                   <li>排版结果可落盘：点顶栏「<strong>⤓ 导出结果</strong>」或弹窗「<strong>保存为 TXT</strong>」；浏览器支持时可直接覆盖原文件（需确认），否则自动下载。</li>
-                  <li><strong>听书</strong>：点顶栏「<strong>🔊 朗读</strong>」进入纯净模式并从当前位置开始念；控制条在窗口顶端，可 ⏸ 暂停 / ⏹ 停止 / 调语速 / 换语音 / 开关「🎯 跟随」。停止后位置自动记住，下次打开该文件点朗读即接着念。</li>
+                  <li><strong>听书</strong>：点顶栏「<strong>🔊 朗读</strong>」进入纯净模式，默认从<strong>当前页第一行</strong>开始念。想从某一行起，先<strong>点一下那一行</strong>（行号变紫、左侧出现竖条即已选定），再点朗读就从该行开始；再次点击同一行取消选定。控制条在窗口顶端，可 ⏸ 暂停 / ⏹ 停止 / 调语速 / 换语音 / 开关「🎯 跟随」。</li>
                 </ul>
               </div>
 
-              <div class="help-tip">提示：编码/字号下拉框聚焦时，PageUp / PageDown 不会触发翻页，避免误操作。朗读需系统已安装中文语音包，缺失时会明确提示并禁用按钮。</div>
+              <div class="help-tip">提示：编码/字号下拉框聚焦时，PageUp / PageDown 不会触发翻页，避免误操作。朗读需系统已安装中文语音包，缺失时会明确提示并禁用按钮。朗读起点：点正文任意一行即可选定，未选定时从当前页第一行开始。</div>
             </div>
           </div>
         </div>
@@ -1438,6 +1459,11 @@
     let gapTimer = null, watchdog = null, deadline = 0;
     let rate = 1, follow = true;
     let dirtySinceSave = 0;
+    // 手动选定的起始行（逻辑行号）。null = 未选定。
+    // 朗读起点规则（v1.14）：① 有选定行 → 从该选定行开始；
+    //                          ② 否则 → 从「当前页面的第一行」开始。
+    // 注意：规则② 明确取代了「沿用上次中断位置」，故 start() 每次都会重算起点。
+    let anchorLine = null;
     // 代际令牌：synth.cancel() 后旧 utterance 的 onend/onerror 仍会派发，
     // 若无条件推进索引会导致「跳句」。每次取消都 gen++，回调只认自己那一代。
     let gen = 0;
@@ -1517,6 +1543,7 @@
     function setLines(lines) {
       const wasPlaying = playing;
       const speakingText = cur ? cur.text : '';
+      anchorLine = null;                              // 逻辑行结构已重建，旧的选定行不再对应原文
       queue = buildQueue(lines || []);
       // 全文重排后（如切换「正文排版」）队列已换：按文本回找原句，找不到就回到开头
       if (speakingText) {
@@ -1628,6 +1655,37 @@
       return first;
     }
 
+    /* ---------- 朗读起点（v1.14 规则） ---------- */
+    // 当前页面的第一行 → 逻辑行号
+    function pageFirstLine() {
+      const rows = state.visualRows || [];
+      if (!rows.length) return 0;
+      const p = (typeof currentPage === 'function') ? currentPage() : 1;
+      const pages = state.pages || [];
+      const vri = pages.length ? pages[Math.max(0, Math.min(p - 1, pages.length - 1))] : 0;
+      const vr = rows[vri];
+      return vr ? vr.lineIndex : 0;
+    }
+    // 逻辑行 → 队列下标：取首个 li >= 目标行的块；目标越界则落回最后一块
+    function indexForLine(li) {
+      for (let i = 0; i < queue.length; i++) if (queue[i].li >= li) return i;
+      return queue.length ? queue.length - 1 : 0;
+    }
+    // 起点解析：选定行优先，否则本页第一行
+    function resolveStartIndex() {
+      if (!queue.length) return 0;
+      return indexForLine(anchorLine != null ? anchorLine : pageFirstLine());
+    }
+    // 由正文点击驱动；再次点同一行 = 取消选定
+    function setAnchor(li) {
+      const v = (li == null || !isFinite(li)) ? null : Math.max(0, Math.floor(Number(li)));
+      anchorLine = (v == null || v === anchorLine) ? null : v;
+      // 未在朗读时同步待读索引，避免「已选定行」与「下一步」显示不一致。
+      // 暂停中（playing=true）不动 idx——resume 应从原句续读，而非跳走。
+      if (!playing && queue.length) idx = resolveStartIndex();
+      emit('change'); emit('state');
+    }
+
     /* ---------- 对外控制 ---------- */
     function start() {
       if (!SUPPORTED) { showToast('当前浏览器不支持语音朗读'); return; }
@@ -1635,6 +1693,8 @@
       if (!queue.length) { showToast('没有可朗读的内容'); return; }
       if (playing && paused) { resume(); return; }
       if (playing) return;
+      // 每次触发都按规则重算起点：手动选定行 > 当前页第一行
+      idx = resolveStartIndex();
       if (idx >= queue.length) idx = 0;
       playing = true; paused = false;
       emit('state');
@@ -1727,7 +1787,10 @@
       } catch (e) {}
       return null;
     }
-    // 打开文件后调用：把上次念到的句子恢复为待读位置（不自动开念）
+    // 打开文件后调用：把上次念到的句子恢复为「待读位置」（不自动开念）。
+    // 注意：自 v1.14 起朗读起点由 resolveStartIndex() 决定（选定行 > 本页第一行），
+    // start() 每次都会重算并覆盖此处的 idx。本函数保留其记录语义（上次听到哪），
+    // 不再作为朗读起点，以免与「停止后从页首重新开始」的规则冲突。
     function restorePos() {
       const p = loadPos();
       idx = (p && p.idx >= 0 && p.idx < queue.length) ? p.idx : 0;
@@ -1762,6 +1825,11 @@
       index: () => idx,
       currentText: () => (cur ? cur.text : ''),
       currentRange: currentRange,
+      // 朗读起点（v1.14 规则）：手动选定行 > 当前页第一行
+      getAnchor: () => anchorLine,
+      setAnchor: setAnchor,
+      resolveStartIndex: resolveStartIndex,
+      pageFirstLine: pageFirstLine,
       next: () => jumpTo(idx + 1),
       prev: () => jumpTo(idx - 1),
       restorePos: restorePos,
@@ -1785,6 +1853,7 @@
     // 朗读高亮：按 (行, 行内偏移) 判定，重排后依然锚定同一句话。
     // 用行级 class 叠加，同一行内的搜索 <mark class="kw"> 不受影响（互不嵌套）。
     const spk = Speak.currentRange();
+    const anchor = Speak.getAnchor();       // 手动选定的起始行（逻辑行号），null = 未选定
     let html = '';
     for (let i = start; i <= end; i++) {
       const vr = state.visualRows[i];
@@ -1792,7 +1861,10 @@
         ? highlightVisualRow(vr, currentMatchStart, currentMatchEnd)
         : escapeHtml(vr.text);
       const isSpk = !!(spk && vr.lineIndex === spk.li && vr.end > spk.s && vr.start < spk.e);
-      html += '<div class="row' + (isSpk ? ' spk' : '') + '" style="height:' + state.lineHeight + 'px">'
+      const isAnchor = anchor != null && vr.lineIndex === anchor;
+      html += '<div class="row' + (isSpk ? ' spk' : '') + (isAnchor ? ' anchor' : '')
+            + '" data-li="' + vr.lineIndex + '" data-vr="' + i + '"'
+            + ' style="height:' + state.lineHeight + 'px">'
             + '<span class="ln" style="width:' + gw + '">' + (i + 1) + '</span>'
             + '<span class="tx">' + txHtml + '</span></div>';
     }
@@ -2612,7 +2684,7 @@
     speakBtn.classList.toggle('active', Speak.isPlaying());
     speakBtn.textContent = Speak.isPlaying() ? '🔊 朗读中' : '🔊 朗读';
     speakBtn.title = canSpeak
-      ? '从当前位置开始朗读（TTS）'
+      ? (Speak.getAnchor() != null ? '从选定行开始朗读（TTS）' : '从当前页第一行开始朗读（TTS）')
       : '系统未安装中文语音，朗读不可用';
     spkFollow.classList.toggle('active', Speak.getFollow());
     spkFollow.setAttribute('aria-pressed', String(Speak.getFollow()));
@@ -2622,6 +2694,23 @@
   Speak.on('change', () => { render(); });      // 换句 → 重绘高亮（行级，开销极小）
   buildVoiceOptions();
   updateSpeakUI();
+
+  // 正文点击 = 手动选定朗读起始行；再次点击同一行 = 取消选定。
+  // 选定标记为 .row.anchor（左侧竖条 + 行号变色），与朗读中的 .row.spk 并存不冲突。
+  content.addEventListener('click', (e) => {
+    if (!state.bytes) return;
+    // 拖选文本后也会派发 click，此时不应改变选定行
+    const sel = window.getSelection ? window.getSelection() : null;
+    if (sel && String(sel).length) return;
+    const row = (e.target && e.target.closest) ? e.target.closest('.row') : null;
+    if (!row || !row.dataset) return;
+    const li = parseInt(row.dataset.li, 10);
+    if (!isFinite(li)) return;
+    const vr = parseInt(row.dataset.vr, 10);
+    Speak.setAnchor(li);
+    if (Speak.getAnchor() == null) showToast('已取消选定行');
+    else showToast('已选定第 ' + (isFinite(vr) ? vr + 1 : li + 1) + ' 行：下次朗读从此行开始');
+  });
 
   Speak.on('state', () => {                     // 语音列表异步就绪后补一次下拉
     if (spkVoice.options.length === 0 || spkVoice.disabled) buildVoiceOptions();
@@ -2635,7 +2724,7 @@
       enterReadingModeForSpeech();
       Speak.start();
       if (!Speak.isPlaying()) return;
-      showToast(Speak.index() > 0 ? '从上次位置继续朗读' : '开始朗读');
+      showToast(Speak.getAnchor() != null ? '从选定行开始朗读' : '从本页第一行开始朗读');
     } else if (Speak.isPaused()) {
       Speak.resume();
     } else {
