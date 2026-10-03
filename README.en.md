@@ -8,7 +8,7 @@
 
 A **browser-based, single-file** TXT reading tool, purpose-built for long-form Chinese content such as novels, logs, and scripts. It auto-detects GBK / Big5 / UTF-8 encodings, paginates by real rendered lines, and offers wildcard search, sentence-based layout, a draggable wrap-boundary ruler, distraction-free reading, eye-care themes, and keyboard shortcuts — bringing you back to immersive reading.
 
-> **v1.15** · Pure front-end · Zero dependencies · Works out of the box
+> **v1.16** · Pure front-end · Zero dependencies · Works out of the box
 
 ---
 
@@ -67,7 +67,7 @@ A browser-based TXT reading tool designed for long-form Chinese content such as 
 
 ## 🛣 Roadmap
 
-Formal plans live in [`docs/plans/`](docs/plans/README.md). **Current code version: `v1.15-speak-contrast-gap`** (latest stable freeze line: `v1.12-stable`); plan docs baseline `plans-v1.0-frozen`.
+Formal plans live in [`docs/plans/`](docs/plans/README.md). **Current code version: `v1.16-btn-order`** (latest stable freeze line: `v1.12-stable`); plan docs baseline `plans-v1.0-frozen`.
 
 | ID | Name | Priority | Effort | Status |
 |---|---|---|---|---|
@@ -92,6 +92,7 @@ Formal plans live in [`docs/plans/`](docs/plans/README.md). **Current code versi
 
 | Version | Tag | Date | Notes |
 |------|------|------|------|
+| v1.16 | `v1.16-btn-order` | 2026-10-03 | Toolbar grouping: moved "⤓ Export result" ahead of "🔊 Read aloud" so the **typeset → export** chain (text processing and output) stays contiguous. Read-aloud belongs to the listening branch (it switches to reading mode and hides the top bar), so it is placed last and no longer splits that chain |
 | v1.15 | `v1.15-speak-contrast-gap` | 2026-10-03 | Speech legibility & pacing: (1) Fixed "the spoken line's text is invisible on a light reading background" — the spoken line no longer hard-codes the theme text colour; it now follows its context (`--read-text` in reading mode). Marker colours are decoupled from the theme and picked by reading-background lightness (dark markers on light, light markers on dark); in reading mode the spoken row keeps its full-row tint and left bar, and the ▶ sits right before the text. (2) Shorter pauses: the next sentence is pre-queued into the engine for gapless playback, the timer gap drops 140ms → 60ms (fallback only), plus a hand-off guard so a dropped queued block can never leave playback silently stalled |
 | v1.14 | `v1.14-speak-start` | 2026-10-03 | Speech start position & line marker sync: the spoken line now carries multiple markers (leading ▶ + bottom underline + left bar + tint) that move with playback; reading now starts at the **first line of the current page** instead of the last interrupted position, and clicking any line in the body sets a manual start line (click again to clear) which takes priority over the page start — re-triggering after stop re-resolves accordingly |
 | v1.13 | `v1.13-speak` | 2026-10-03 | Text-to-speech (PLAN-B): read the text sentence by sentence with per-sentence highlight follow; pause/resume/stop; 0.5–2.0× rate applied in real time; Chinese voice picker; follow-scroll toggle. Long sentences are re-chunked to dodge the ~15s browser cut-off; a watchdog self-heals background throttling; the spoken position is stored per file for resume. Also fixes a PLAN-A leftover where the export button stayed disabled after opening a file |

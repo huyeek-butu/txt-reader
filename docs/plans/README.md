@@ -14,7 +14,7 @@
 （A 的存盘模块可被 D 复用；B 不依赖任何模块，可独立上线；C 的紧迫性取决于日常文本规模）
 
 **计划基线**：`plans-v1.0-frozen`（计划文档自身版本）
-**代码基线**：`v1.15-speak-contrast-gap`（commit 见 git）— 计划文档首次落成时为 `v1.9-punct-combos`（`6060ee6`），A 交付后为 `v1.12-stable`（`2de5c3d`），B 交付后为 `v1.13-speak`，起点修订后为 `v1.14-speak-start`。
+**代码基线**：`v1.16-btn-order`（commit 见 git）— 计划文档首次落成时为 `v1.9-punct-combos`（`6060ee6`），A 交付后为 `v1.12-stable`（`2de5c3d`），B 交付后为 `v1.13-speak`，起点修订后为 `v1.14-speak-start`，可读性与停顿修订后为 `v1.15-speak-contrast-gap`。
 
 ---
 
@@ -36,3 +36,4 @@
 | 2026-10-03 | PLAN-B 交付（v1.13-speak），状态改为已交付；代码基线更新为 `v1.13-speak` | PLAN-B、全索引 |
 | 2026-10-03 | 按用户三条新规则修订 PLAN-B 起点逻辑（v1.14-speak-start，文档 v1.2）：起点改为「选定行 > 本页第一行」，朗读行加多重标记；代码基线更新为 `v1.14-speak-start` | PLAN-B、全索引 |
 | 2026-10-03 | 按用户反馈修订 PLAN-B 可读性与停顿（v1.15-speak-contrast-gap，文档 v1.3）：标记色与主题解耦、按阅读底色取档；文字色交还上下文；预排队消除句间静默 + 交接保护；代码基线更新为 `v1.15-speak-contrast-gap` | PLAN-B、全索引 |
+| 2026-10-03 | 顶栏按钮分组调整（v1.16-btn-order，无计划归属，纯 UI 顺序）：`⤓ 导出结果` 前移到 `🔊 朗读` 之前，使「排版 → 导出」连成一块；代码基线更新为 `v1.16-btn-order` | 全索引 |

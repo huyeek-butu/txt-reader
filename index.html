@@ -613,11 +613,13 @@
       <div class="ctrl">
         <button class="btn-ghost active" id="layoutToggleBtn" title="正文按句分段排版（与「简单排版」同一规则，点击切换原样/排版）" aria-pressed="true">✒ 正文排版</button>
       </div>
-      <div class="ctrl">
-        <button class="btn-ghost" id="speakBtn" title="从当前位置开始朗读（TTS）" disabled>🔊 朗读</button>
-      </div>
+      <!-- v1.16：导出前置到朗读之前 —— 「排版 → 导出」是同一条文字加工与输出链，
+           朗读是听书分支（点击即进纯净模式、顶栏被隐藏），单独收在末尾避免夹断前者。 -->
       <div class="ctrl">
         <button class="btn-ghost" id="exportBtn" title="导出当前排版结果为 TXT 文件" disabled>⤓ 导出结果</button>
+      </div>
+      <div class="ctrl">
+        <button class="btn-ghost" id="speakBtn" title="从当前位置开始朗读（TTS）" disabled>🔊 朗读</button>
       </div>
     </header>
 
@@ -676,7 +678,7 @@
               <div class="help-header">
                 <div class="help-icon">📄</div>
                 <div class="help-title">TXT 阅读器</div>
-                <div class="help-version">v1.15</div>
+                <div class="help-version">v1.16</div>
               </div>
 
               <div class="help-section">
