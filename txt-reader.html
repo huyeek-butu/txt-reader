@@ -11,6 +11,14 @@
     --accent: #6366f1;
     --accent2: #8b5cf6;
     --ease: cubic-bezier(0.16, 1, 0.3, 1);
+    /* 朗读行 / 手动选定行的标记色。默认跟随主题色；进入阅读模式后改由
+       --read-*-mark/-fill（依阅读底色的深浅取档，JS 写入）接管。
+       必须与主题色解耦：阅读配色与应用主题彼此独立，
+       「暗色主题 + 浅色阅读底色」时用主题色会出现浅标记压浅底 → 看不见。 */
+    --spk-mark: var(--accent);
+    --spk-fill: color-mix(in srgb, var(--accent) 20%, transparent);
+    --anc-mark: var(--accent2);
+    --anc-fill: color-mix(in srgb, var(--accent2) 12%, transparent);
   }
   html[data-theme="light"] {
     /* 护眼亮色：暖纸感 · 减蓝光 · 降对比
@@ -449,31 +457,35 @@
   /* 手动选定的起始行：左侧竖条 + 行号变色。写在 .row.spk 之前——
      两行重合时由后面的 .spk 接管竖条颜色，视觉上「正在念」优先。 */
   #content .row.anchor {
-    background: color-mix(in srgb, var(--accent2) 12%, transparent);
-    box-shadow: inset 3px 0 0 0 var(--accent2);
+    background: var(--anc-fill);
+    box-shadow: inset 3px 0 0 0 var(--anc-mark);
   }
-  #content .row.anchor .ln { color: var(--accent2); font-weight: 600; }
+  #content .row.anchor .ln { color: var(--anc-mark); font-weight: 600; }
   /* 正在朗读的视觉行：整行底色 + 左侧竖条 + 行首 ▶ + 底部下划线。
      四重标记叠加，保证「念到哪一行」一眼可辨。
-     用行级高亮而非字符级 mark，避免与搜索的 <mark class="kw"> 在同一行内互相嵌套、切碎 HTML。 */
+     用行级高亮而非字符级 mark，避免与搜索的 <mark class="kw"> 在同一行内互相嵌套、切碎 HTML。
+     标记颜色一律走 --spk-mark / --spk-fill，不直接引用 --accent。 */
   #content .row.spk {
-    background: color-mix(in srgb, var(--accent) 20%, transparent);
-    box-shadow: inset 3px 0 0 0 var(--accent);
+    background: var(--spk-fill);
+    box-shadow: inset 3px 0 0 0 var(--spk-mark);
     border-radius: 4px;
   }
   #content .row.spk .tx {
-    color: var(--text);
+    /* 这里刻意「不写 color」：文字颜色必须交由上下文决定——
+       阅读模式是 --read-text，普通模式才继承 --text。
+       早期版本在此写死 color: var(--text)，导致「暗色主题 + 浅色阅读底色」下
+       朗读行文字取到暗色主题的浅色字，与浅底色几乎同亮 → 整行看不见。 */
     /* 下划线用 inset 阴影而非 border-bottom：border 会占掉 1px 内容高度，
        固定行高下会导致末行文字被 overflow 截断 */
-    box-shadow: inset 0 -2px 0 0 color-mix(in srgb, var(--accent) 55%, transparent);
+    box-shadow: inset 0 -2px 0 0 var(--spk-mark);
   }
-  #content .row.spk .ln { color: var(--accent); font-weight: 600; }
+  #content .row.spk .ln { color: var(--spk-mark); font-weight: 600; }
   /* 行首 ▶：定位在 .tx 的左内边距（16px）里，既不推挤正文也不占 gutter 宽度 */
   #content .row.spk .tx::before {
     content: '▶';
     position: absolute; left: 2px; top: 0; bottom: 0;
     display: flex; align-items: center;
-    color: var(--accent); font-size: 10px; line-height: 1;
+    color: var(--spk-mark); font-size: 10px; line-height: 1;
   }
   /* 跟随朗读时的滚动目标留白，避免高亮行贴顶 */
   .speak-bar {
@@ -506,7 +518,9 @@
   body.reading-mode .reader-col { gap: 0; }
   body.reading-mode .reader-wrap { border: none; border-radius: 0; box-shadow: none; background: var(--read-bg, var(--surface)); }
   body.reading-mode .viewport { background: var(--read-bg, var(--surface)); }
-  body.reading-mode .row { background: transparent !important; transition: none; }
+  /* 阅读模式：行底色一律去掉（纯净视觉），但朗读行 / 手动选定行必须保留整行标记，
+     否则「念到哪一行」只剩一条下划线可辨。 */
+  body.reading-mode .row:not(.spk):not(.anchor) { background: transparent !important; transition: none; }
   body.reading-mode .ln { display: none; }
   body.reading-mode .tx {
     font-family: var(--read-font-family, inherit);
@@ -515,6 +529,19 @@
     color: var(--read-text, var(--text));
     padding: 0 var(--read-pad-x, 10vw) !important;
   }
+  /* 阅读模式下的标记色改由「阅读底色」的深浅决定（--read-spk-* / --read-anc-*，
+     由 applyReadingSettings 按当前阅读配色写入）。阅读配色与应用主题互相独立，
+     用主题色会在「暗色主题 + 浅色阅读底色」时得到浅色标记而失效。 */
+  body.reading-mode {
+    --spk-mark: var(--read-spk-mark, var(--accent));
+    --spk-fill: var(--read-spk-fill, color-mix(in srgb, var(--accent) 20%, transparent));
+    --anc-mark: var(--read-anc-mark, var(--accent2));
+    --anc-fill: var(--read-anc-fill, color-mix(in srgb, var(--accent2) 12%, transparent));
+  }
+  body.reading-mode #content .row.spk { background: var(--spk-fill) !important; }
+  body.reading-mode #content .row.anchor { background: var(--anc-fill) !important; }
+  /* 阅读模式下 .tx 的左内边距是 10vw，▶ 要贴到正文前，而不是飘在窗口最左边 */
+  body.reading-mode #content .row.spk .tx::before { left: calc(var(--read-pad-x, 10vw) - 15px); }
   body.reading-mode .empty { background: var(--read-bg, var(--surface)); }
   body.reading-mode .viewport::-webkit-scrollbar-thumb { background: var(--read-text, var(--glow)); }
 </style>
@@ -649,7 +676,7 @@
               <div class="help-header">
                 <div class="help-icon">📄</div>
                 <div class="help-title">TXT 阅读器</div>
-                <div class="help-version">v1.14</div>
+                <div class="help-version">v1.15</div>
               </div>
 
               <div class="help-section">
@@ -666,7 +693,7 @@
                   <li><strong>简单排版 · 按句分段</strong>：主窗口正文与「✒ 简单排版」弹窗共用同一规则——每句一段、段间空行、连续短对话合并不空行；逗号等非句末标点后的换行自动合并；破折号 —— / 省略号 …… 连排作强制分段。<strong>排版结果框可直接编辑</strong>，手动改过之后自动排版暂停，避免改动被冲掉。</li>
                   <li><strong>导出 / 保存</strong>：主窗口「⤓ 导出结果」与弹窗「保存为 TXT」支持把排版结果存为文件；浏览器支持时可直接覆盖原文件（需确认），不支持时自动降级为下载，绝不出现"点了没反应"。</li>
                   <li><strong>连续标点组合处理</strong>：<code>！！</code> <code>？！</code> <code>。。</code> 等连排／混排视为一个句末边界，原样保留不折叠；句末标点后的收尾引号括号（<code>！”</code> <code>。</code> <code>……”</code>）归入前一句，不会另起一行或被切到下一句首。</li>
-                  <li><strong>语音朗读（TTS）</strong>：默认从<strong>当前页第一行</strong>按句朗读正文；正在朗读的行有明确标记（行首 ▶ + 下划线 + 左侧竖条 + 底色），随朗读进度同步移动。点击正文任意一行可手动选定朗读起点（再次点击取消）。支持暂停 / 继续 / 停止、0.5–2.0× 语速实时调节、中文语音选择、跟随滚动开关。超长句自动二次切分（规避浏览器约 15 秒截断），后台切回可自愈。</li>
+                  <li><strong>语音朗读（TTS）</strong>：默认从<strong>当前页第一行</strong>按句朗读正文；正在朗读的行有明确标记（行首 ▶ + 下划线 + 左侧竖条 + 底色），随朗读进度同步移动；标记色随阅读底色深浅自动换档（浅底用深标记），任何主题组合下都清晰可辨。点击正文任意一行可手动选定朗读起点（再次点击取消）。支持暂停 / 继续 / 停止、0.5–2.0× 语速实时调节、中文语音选择、跟随滚动开关。句与句<strong>无缝衔接</strong>（下一句提前排入语音引擎，不再逐句等待），超长句自动二次切分（规避浏览器约 15 秒截断），后台切回可自愈。</li>
                   <li><strong>换行边界标尺</strong>：窗口顶端 Word 式标尺，拖动设定换行列边界，松开生效、双击恢复自动。</li>
                   <li><strong>进度自动保存</strong>：多文件独立记忆阅读位置，内容指纹防串档，一键恢复。</li>
                   <li><strong>纯净阅读模式</strong>：一键隐藏 UI，自定义字号、字体、宽度与背景色。</li>
@@ -1447,15 +1474,19 @@
     const SUPPORTED = !!(synth && typeof window.SpeechSynthesisUtterance === 'function');
     // 中文约 4–5 字/秒：60 字 ≈ 12–15 秒，卡在 Chrome 截断阈值之下
     const MAX_CHUNK = 60;
-    const GAP_MS = 140;          // 子块之间留一点气口，避免连续 utterance 被吞字
+    // 段落/句子之间的等时器气口。正常路径已由「预排队」（lookahead）做到无隙衔接，
+    // 这里只是兜底：预排队失效（如某块报错）或末块异常时才会用到。
+    const GAP_MS = 60;
     const MS_PER_CHAR = 200;     // 保守估速（ms/字），仅用于看门狗超时判定
     const WATCHDOG_BUFFER = 6000;
+    const TRANSITION_MS = 2500;  // 句间交接保护：预排的下一块迟迟不开声就重发
 
     let voices = [], voice = null;
     let queue = [];              // [{ li, text, s, e }]
     let idx = 0;
     let playing = false, paused = false;
     let cur = null;              // 当前正在念的项
+    let nextPre = null;          // 已预排进引擎队列、待播的下一块下标（无隙衔接用）
     let gapTimer = null, watchdog = null, deadline = 0;
     let rate = 1, follow = true;
     let dirtySinceSave = 0;
@@ -1553,9 +1584,7 @@
       if (idx >= queue.length) idx = 0;
       if (wasPlaying && !queue.length) { stop(); return; }
       if (wasPlaying) {
-        gen++;                                        // 作废旧回调
-        try { synth.cancel(); } catch (e) {}
-        clearTimers();
+        cancelAll();                                  // 作废旧回调 + 清掉已预排队的旧块
         cur = null;
         if (paused) { emit('change'); }
         else schedule(Math.min(GAP_MS, 60));           // 用新队列续读当前句
@@ -1569,6 +1598,15 @@
       if (watchdog) { clearInterval(watchdog); watchdog = null; }
       deadline = 0;
     }
+    // 取消在播与待播的一切内容，并作废旧回调（gen++）。
+    // nextPre 必须一并清空：否则残留的「已预排队」标记会让 onend 误判为
+    // 「下一块已排队」而不再推进，整条队列就停住了。
+    function cancelAll() {
+      gen++;
+      nextPre = null;
+      try { synth.cancel(); } catch (e) {}
+      clearTimers();
+    }
     function schedule(ms) {
       if (gapTimer) clearTimeout(gapTimer);
       gapTimer = setTimeout(() => { gapTimer = null; speakCurrent(); }, ms);
@@ -1580,55 +1618,103 @@
       watchdog = setInterval(() => {
         if (!playing || paused || !deadline) return;
         if (Date.now() > deadline) {
-          // 判定卡死：作废旧回调并取消当前 utterance，跳到下一块
-          gen++;
-          try { synth.cancel(); } catch (e) {}
-          cur = null; deadline = 0;
-          if (watchdog) { clearInterval(watchdog); watchdog = null; }
+          // 判定卡死：清空队列（含已预排队的下一块）并作废旧回调，跳到下一块重发
+          cancelAll();
+          cur = null;
           if (idx < queue.length - 1) { idx++; schedule(4); } else { finish(); }
         }
       }, 1000);
+    }
+    // 预排队把句间静默压到最低，但也意味着「等 onend 再起定时器」这条兜底不再生效：
+    // 万一引擎把预排的块悄悄丢了（个别实现会），onend 已清掉看门狗，整条队列就会静默停住。
+    // 因此在交接窗口挂一个短看门狗：下一块迟迟不开声就重发它。
+    function armTransitionGuard(nextIdx) {
+      if (watchdog) clearInterval(watchdog);
+      deadline = Date.now() + TRANSITION_MS;
+      watchdog = setInterval(() => {
+        if (!playing || paused || !deadline) return;
+        if (Date.now() > deadline) {
+          cancelAll();
+          cur = null;
+          idx = Math.min(Math.max(nextIdx, 0), queue.length - 1);
+          schedule(4);
+        }
+      }, 500);
     }
     function finish() {
       stop();
     }
 
     /* ---------- 朗读主流程 ---------- */
-    function speakCurrent() {
-      if (!SUPPORTED || !queue.length || paused) return;
-      if (idx < 0 || idx >= queue.length) { finish(); return; }
-      const item = queue[idx];
-      const myGen = ++gen;                             // 本块专属代际
-      cur = item;
-      deadline = 0;
-      emit('change');                                  // 先亮高亮，避免声音先到
-      try { scrollToCurrent(); } catch (e) {}
-      tickSave();
+    /* 把一个块排进引擎队列。
+       pre = false：作为「当前块」发起 —— 立即亮高亮，换新代际；
+       pre = true ：作为「下一块」预排队 —— 等它的 onstart 才推进高亮/索引，代际不变。
+       预排队是缩短段间停顿的关键：等 onend 再 speak() 会额外付一次引擎启动延迟，
+       句与句之间就会空出一段明显静默。 */
+    function enqueue(i, pre) {
+      if (i < 0 || i >= queue.length) return false;
+      const item = queue[i];
+      const myGen = pre ? gen : ++gen;                 // 预排队必须沿用当前代际
+      if (!pre) { idx = i; cur = item; }
       const u = new SpeechSynthesisUtterance(item.text);
       if (voice) { u.voice = voice; u.lang = voice.lang || 'zh-CN'; }
       else u.lang = 'zh-CN';
       u.rate = rate;
-      u.onstart = () => { if (myGen !== gen) return; armWatchdog(item); };
-      u.onend = () => {
+      u.onstart = () => {
         if (myGen !== gen) return;                     // 旧代回调（已被取消/跳块）→ 忽略
-        clearTimers();
+        // 高亮与索引以 onstart 为准：预排队的块此刻才成为「当前块」
+        idx = i; cur = item; nextPre = null; deadline = 0;
+        emit('change');
+        try { scrollToCurrent(); } catch (e) {}
+        tickSave();
+        if (paused) return;                            // 暂停中：只同步高亮，恢复时再补排队
+        armWatchdog(item);
+        lookahead();                                   // 立刻预排下一块 → 无缝衔接
+      };
+      u.onend = () => {
+        if (myGen !== gen) return;                     // 旧代回调 → 忽略
         if (!playing) return;
-        if (idx >= queue.length - 1) { finish(); return; }
-        idx++;
-        schedule(GAP_MS);
+        if (i !== idx) return;                         // 非当前块（迟到的旧回调）→ 忽略
+        clearTimers();
+        // 下一块已在引擎队列里：交给它的 onstart 推进，只留交接保护（防引擎丢块）
+        if (nextPre === i + 1) { armTransitionGuard(i + 1); return; }
+        if (i >= queue.length - 1) { finish(); return; }
+        idx = i + 1; schedule(GAP_MS);                 // 兜底：预排队失效时才用等时器推进
       };
       u.onerror = (e) => {
         if (myGen !== gen) return;
         // interrupted / canceled 属主动取消（暂停、跳块、停止），不算错误
         const t = e && e.error;
         if (t === 'interrupted' || t === 'canceled') return;
+        if (i !== idx) { if (nextPre === i) nextPre = null; return; }  // 预排队块出错 → 交回兜底路径
         clearTimers();
         if (!playing) return;
-        if (idx >= queue.length - 1) { finish(); return; }
-        idx++;                                        // 跳过念不出的块，不卡死整条队列
+        if (i >= queue.length - 1) { finish(); return; }
+        idx = i + 1;                                   // 跳过念不出的块，不卡死整条队列
         schedule(GAP_MS);
       };
       try { synth.speak(u); } catch (e) { u.onerror && u.onerror({ error: 'speak-throw' }); }
+      return true;
+    }
+    // 预排下一块：一次只预排一块 —— 既消灭句间静默，又不让长队列占内存、引发取消风暴
+    function lookahead() {
+      if (paused || !playing) return;
+      const j = idx + 1;
+      if (j >= queue.length || nextPre === j) return;
+      nextPre = j;
+      if (!enqueue(j, true)) nextPre = null;
+    }
+    function speakCurrent() {
+      if (!SUPPORTED || !queue.length || paused) return;
+      if (idx < 0 || idx >= queue.length) { finish(); return; }
+      nextPre = null;
+      const item = queue[idx];
+      cur = item;
+      deadline = 0;
+      emit('change');                                  // 先亮高亮，避免声音先到
+      try { scrollToCurrent(); } catch (e) {}
+      tickSave();
+      enqueue(idx, false);
     }
     function scrollToCurrent() {
       if (!follow || !cur) return;
@@ -1714,14 +1800,13 @@
       emit('state');
       // 原生 resume 后若引擎未续播，看门狗会兜底重启；先给一次机会
       try { synth.resume(); } catch (e) {}
-      if (cur) armWatchdog(cur);
+      // 暂停期间 onstart 里跳过的预排队在此补上，恢复后依旧是无缝衔接
+      if (cur) { armWatchdog(cur); lookahead(); }
       else schedule(4);
     }
     function stop() {
       playing = false; paused = false; cur = null;
-      gen++;
-      clearTimers();
-      try { synth.cancel(); } catch (e) {}
+      cancelAll();
       savePos();
       emit('change'); emit('state');
     }
@@ -1732,21 +1817,18 @@
       if (v === rate) return;
       rate = v;
       if (playing && !paused && cur) {
-        gen++;
-        try { synth.cancel(); } catch (e) {}
-        clearTimers();
+        cancelAll();
         schedule(4);
       }
       emit('state');
     }
-    function jumpTo(i) {      if (!queue.length) return;
+    function jumpTo(i) {
+      if (!queue.length) return;
       idx = Math.max(0, Math.min(i, queue.length - 1));
       cur = null;
       if (playing) {
-        gen++;                                         // 作废旧回调，避免旧 onend 再推进一次
-        try { synth.cancel(); } catch (e) {}
-        clearTimers();
         paused = false;
+        cancelAll();                                   // 连已预排队的下一块一并取消
         schedule(4);
       }
       emit('change'); emit('state');
@@ -2436,6 +2518,14 @@
     rs.setProperty('--read-pad-x', READ_WIDTHS[readSettings.width]);
     rs.setProperty('--read-bg', t.bg);
     rs.setProperty('--read-text', t.text);
+    /* 朗读 / 手动选定行的标记色：按阅读底色的深浅取两档。
+       浅底用深标记、深底用浅标记，保证任意「应用主题 × 阅读配色」组合下
+       标记对比度都够（深底档 #f2b64d 对 #1c1a24 约 9.5:1，
+       浅底档 #a25e08 对 #efe3cd 约 4.0:1）。 */
+    rs.setProperty('--read-spk-mark', t.dark ? '#f2b64d' : '#a25e08');
+    rs.setProperty('--read-spk-fill', t.dark ? 'rgba(242,182,77,.14)' : 'rgba(162,94,8,.13)');
+    rs.setProperty('--read-anc-mark', t.dark ? '#8fb8e8' : '#1f6f8b');
+    rs.setProperty('--read-anc-fill', t.dark ? 'rgba(143,184,232,.13)' : 'rgba(31,111,139,.12)');
     updateReadPad();
     if (readFontVal) readFontVal.textContent = readSettings.fontSize + 'px';
     if (readFontSeg) [...readFontSeg.children].forEach(b => b.classList.toggle('active', b.dataset.font === readSettings.font));
