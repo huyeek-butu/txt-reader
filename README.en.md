@@ -8,7 +8,7 @@
 
 A **browser-based, single-file** TXT reading tool, purpose-built for long-form Chinese content such as novels, logs, and scripts. It auto-detects GBK / Big5 / UTF-8 encodings, paginates by real rendered lines, and offers wildcard search, sentence-based layout, a draggable wrap-boundary ruler, distraction-free reading, eye-care themes, and keyboard shortcuts — bringing you back to immersive reading.
 
-> **v1.17** · Pure front-end · Zero dependencies · Works out of the box
+> **v1.18** · Pure front-end · Zero dependencies · Works out of the box
 
 ---
 
@@ -67,13 +67,13 @@ A browser-based TXT reading tool designed for long-form Chinese content such as 
 
 ## 🛣 Roadmap
 
-Formal plans live in [`docs/plans/`](docs/plans/README.md). **Current code version: `v1.17-perf-mobile`** (latest stable freeze line: `v1.12-stable`); plan docs baseline `plans-v1.0-frozen`.
+Formal plans live in [`docs/plans/`](docs/plans/README.md). **Current code version: `v1.18-chunked-layout`** (latest stable freeze line: `v1.12-stable`); plan docs baseline `plans-v1.0-frozen`.
 
 | ID | Name | Priority | Effort | Status |
 |---|---|---|---|---|
 | `PLAN-2026-1001-A` | Local file write-back & export | **P0** | M | **✅ Delivered in v1.10** |
 | `PLAN-2026-1001-B` | Text-to-speech reading | P1 | M | **✅ Delivered in v1.13** |
-| `PLAN-2026-1001-C` | Large-file performance & mobile | P1 | L | **🔄 In progress (v1.17)** — stages 1/2/3 delivered, see [`bench/README.md`](bench/README.md); stage-3 item "chunked scheduling" (要点 3) still pending — 100k-line first paint is 383 ms vs the <300 ms target |
+| `PLAN-2026-1001-C` | Large-file performance & mobile | P1 | L | **✅ Delivered in v1.18** — stages 1/2/3 plus item 3 "chunked scheduling"; 100k-line first paint 383 → **138 ms**, meeting the <300 ms target. See [`bench/README.md`](bench/README.md) |
 | `PLAN-2026-1001-D` | Highlights & knowledge-base export | P2 | L | FROZEN v1.0 |
 
 > Suggested order: A → B → C → D. Frozen plans stay unchanged; revisions bump the version (v1.0 → v1.1) and append a change log inside the document.
@@ -92,6 +92,7 @@ Formal plans live in [`docs/plans/`](docs/plans/README.md). **Current code versi
 
 | Version | Tag | Date | Notes |
 |------|------|------|------|
+| v1.18 | `v1.18-chunked-layout` | 2026-10-03 | Chunked scheduling (PLAN-C item 3, closing out PLAN-C): the whole-document layout performed on file open is now **two-layer chunked** — (1) **visual-row chunking** (line wrapping built in batches) and (2) **layout (sentence-splitting) chunking** (incremental sentence splitting + per-sentence grouping, cut only at safe line boundaries). Only the first chunk runs synchronously on open (60k chars ≈ 2ms); the rest is drained on `requestIdleCallback` with a 6ms-per-chunk budget, while total height and total line count are estimated by prefix-ratio extrapolation before completion (0.088% line-count error). Measured at 100k lines: first paint 949.9 → **138.4 ms** (−85.4%, meeting the <300 ms target), layout toggle 607/854 → 15/10 ms, font 24→28 466 → 54 ms, "no wrap" 1245 → 11 ms, heap 31.8 → 28.2 MB; at 500k lines first paint 4354.5 → **340.3 ms** and heap 155.6 → 137.6 MB. **Byte-for-byte identical rendering**: the first screen (captured while still unchunked) and 10 visual-row positions produce the same fingerprints as v1.17, with matching total height / status-bar line count; 69 chunk-equivalence assertions pass; features needing the full document (search, read-aloud) auto-drain on demand. The headless harness gains three anti-throttling flags and `--wait-fill` |
 | v1.17 | `v1.17-perf-mobile` | 2026-10-03 | Large-file performance & mobile (PLAN-C stages 2/3): (1) **Performance** (measured at 100k lines) — layout toggles, font-size and ruler changes no longer re-decode the whole file or re-run whole-document sentence splitting (decode & split results are version-keyed and reused), character-width measurement now uses a typed-array lookup table, and the speech queue is built lazily: first paint 1009 → **383 ms**, layout toggle 603–871 → **53–72 ms**, font 24→28 454 → **97 ms**, heap 31.8 → **25.5 MB**. (2) **Mobile** — sidebar becomes a drawer at ≤768px (tap the scrim to close), the wrap ruler uses Pointer Events so it can be dragged by touch (re-layout only on release), interactive targets are ≥44×44px, and horizontal overflow is gone. (3) **Fix** — the top bar / page bar could wrap out of control on narrow and landscape viewports and squeeze the reader to 0 (measured 0 → 53px at 812×375 and 97 → 249px at 375×812). (4) New zero-dependency benchmark harness [`bench/`](bench/README.md) (real CDP timing + memory-leak verification) |
 | v1.16 | `v1.16-btn-order` | 2026-10-03 | Toolbar grouping: moved "⤓ Export result" ahead of "🔊 Read aloud" so the **typeset → export** chain (text processing and output) stays contiguous. Read-aloud belongs to the listening branch (it switches to reading mode and hides the top bar), so it is placed last and no longer splits that chain |
 | v1.15 | `v1.15-speak-contrast-gap` | 2026-10-03 | Speech legibility & pacing: (1) Fixed "the spoken line's text is invisible on a light reading background" — the spoken line no longer hard-codes the theme text colour; it now follows its context (`--read-text` in reading mode). Marker colours are decoupled from the theme and picked by reading-background lightness (dark markers on light, light markers on dark); in reading mode the spoken row keeps its full-row tint and left bar, and the ▶ sits right before the text. (2) Shorter pauses: the next sentence is pre-queued into the engine for gapless playback, the timer gap drops 140ms → 60ms (fallback only), plus a hand-off guard so a dropped queued block can never leave playback silently stalled |

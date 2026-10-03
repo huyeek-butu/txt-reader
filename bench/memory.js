@@ -22,15 +22,31 @@ const ROOT = path.resolve(__dirname, '..');
 const MAIN_HTML = path.join(ROOT, 'txt-reader.html');
 
 function parseArgs(argv) {
-  const o = { rows: 100000, cycles: 20, port: 9490, file: MAIN_HTML };
+  const o = { rows: 100000, cycles: 20, port: 9490, file: MAIN_HTML, waitFill: false };
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--rows' && argv[i + 1]) o.rows = parseInt(argv[++i], 10);
     else if (argv[i] === '--cycles' && argv[i + 1]) o.cycles = parseInt(argv[++i], 10);
     else if (argv[i] === '--port' && argv[i + 1]) o.port = parseInt(argv[++i], 10);
     else if (argv[i] === '--file' && argv[i + 1]) o.file = path.resolve(argv[++i]);
+    else if (argv[i] === '--wait-fill') o.waitFill = true;   // 关闭前等后台补齐收敛，使各轮工作集可比
   }
   return o;
 }
+
+/* 等后台补齐（排版分片 + 视觉行分块）收敛：状态栏行数与 spacer 高度先变化、再连续稳定。
+ * 注意这两个值在整个补齐过程中都不变（只在完成时改），所以必须「先等到它变了」再等稳定。 */
+const WAIT_FILL = `(async () => {
+  const sp = document.getElementById('spacer'), st = document.getElementById('stLines');
+  const sig0 = st.textContent + '|' + sp.style.height;
+  let prev = '', stable = 0, changed = false;
+  for (let i = 0; i < 300; i++) {
+    await new Promise(r => setTimeout(r, 50));
+    const cur = st.textContent + '|' + sp.style.height;
+    if (cur !== sig0) changed = true;
+    if (cur === prev) { if (++stable >= 6 && changed) return true; } else { stable = 0; prev = cur; }
+  }
+  return false;
+})()`;
 
 function sampleFile(rows) {
   const label = rows >= 10000 ? (rows / 10000) + 'w' : String(rows);
@@ -88,6 +104,11 @@ async function main() {
       await cdp.send('DOM.setFileInputFiles', { nodeId, files: [sample] });
       await cdp.waitFor(`document.querySelector('#content .row') !== null`, { timeoutMs: 180000, label: '第 ' + i + ' 轮首屏' });
       await sleep(250);
+      // 空闲补齐（排版分片 + 视觉行分块）是**后台异步**的，首屏出现时工作集只建立了一小部分。
+      // 不等它就关，每轮的工作集大小取决于「补齐刚好跑到哪」，轮与轮之间根本不可比 ——
+      // 实测这会凭空造出 3MB 的「首末差」把判定打成 FAIL（首轮尤其容易只建了零星几行）。
+      // 加 --wait-fill 让每轮都在同一状态（补齐完成）下计堆。
+      if (args.waitFill) await cdp.eval(WAIT_FILL, { awaitPromise: true });
       const opened = await sampleHeap(cdp);
       report.points.push({ i, phase: 'open', ...opened });
 

@@ -727,7 +727,7 @@
               <div class="help-header">
                 <div class="help-icon">📄</div>
                 <div class="help-title">TXT 阅读器</div>
-                <div class="help-version">v1.17</div>
+                <div class="help-version">v1.18</div>
               </div>
 
               <div class="help-section">
@@ -965,6 +965,9 @@
     totalVisualRows: 0,   // 视觉行总数：分块补齐前为采样估算值，补齐后为精确值
     effWidth: 0,          // 本轮重排的正文可用宽度（分块续算必须与首屏用同一个值）
     layoutWidth: 0,       // 本轮重排量取的 viewport.clientWidth（供 applyLayoutMetrics 复用）
+    layoutCursor: 0,      // 已消费的原文位置（排版分片游标）
+    layoutDone: false,    // 全文排版（断句 + 按句分段）是否已算完
+    linesTotalEst: 0,     // 全文逻辑行数估算：分片未完成时用于 spacer 与分页，补齐后转精确值
     maxTextWidth: 0, gutter: 60, fontSize: 24, lineHeight: 44,
     fontFamily: '"Segoe UI", system-ui, -apple-system, "Microsoft YaHei", "PingFang SC", sans-serif',
     wrap: true, fileName: '', filePath: '', fileId: '', charCount: 0, pages: [],
@@ -1207,16 +1210,39 @@
     // 字符数始终按原文（不含换行）统计，与排版开关无关，保证状态栏稳定
     state.charCount = info.charCount;
     stChars.textContent = state.charCount.toLocaleString();
-    let lines;
-    if (state.layoutEnabled) {
-      // 复用同一模块：断句 + 按句分段 + 段间空行（结果按版本缓存；排版开关来回切可命中）
-      lines = linesCached(text);
-      if (!lines.length) lines = text.split(/\r\n|\r|\n/);   // 空文本兜底，与原行为一致
+    fillToken++;                       // 新一轮排版：作废上一轮未跑完的分片续算
+    if (state.layoutEnabled && Layout.canChunk(text)) {
+      /* 分片路径（PLAN-C §7.1）：同步只跑首片，其余交给空闲回调。
+       * 首片实测约 2ms / 6 万字符，产出约 8 千逻辑行 —— 首屏只看得见约 40 行。
+       * 全文行数先用「已消费字符比例」外推（分片未完成时供 spacer 与分页使用），
+       * 补齐完成后由 finishFill 落回精确值。 */
+      state.lines = [];
+      state.lineFirstVisualRow = new Int32Array(1024);
+      state.layoutCursor = 0;
+      state.layoutDone = false;
+      layoutFillChunk();                                       // 首片（同步）
+      const total = text.length;
+      state.linesTotalEst = state.layoutCursor > 0
+        ? Math.max(state.lines.length, Math.round(state.lines.length * total / state.layoutCursor))
+        : state.lines.length;
     } else {
-      lines = text.split(/\r\n|\r|\n/);
+      /* 一次性路径：关闭排版、或文本含 \r（归一化会改变长度，使切点判定失准）*/
+      let lines;
+      if (state.layoutEnabled) {
+        lines = linesCached(text);      // 复用同一模块（结果按版本缓存；排版开关来回切可命中）
+        if (!lines.length) lines = text.split(/\r\n|\r|\n/);   // 空文本兜底，与原行为一致
+      } else {
+        lines = text.split(/\r\n|\r|\n/);
+      }
+      state.lines = lines;
+      state.layoutCursor = text.length;
+      state.layoutDone = true;
+      state.linesTotalEst = lines.length;
     }
-    state.lines = lines;
-    Speak.setLines(lines);   // 朗读队列与逻辑行保持同步（切排版 / 换文件都会经过这里）
+    // 朗读进行中必须拿到全量行：Speak 会在 setLines 时立刻建队列，
+    // 若只给前缀，队列就只剩前缀（切排版 / 换文件都会走到这里）。
+    if (!state.layoutDone && (Speak.isPlaying() || Speak.isPaused())) ensureAllLines();
+    Speak.setLines(state.lines);   // 朗读队列与逻辑行保持同步（切排版 / 换文件都会经过这里）
   }
 
   function decodeAndRender() {
@@ -1250,10 +1276,59 @@
   const WARM_LINES = 1500;        // 同步构建的逻辑行数（约 33 屏 @ 44px/行）
   const FILL_BATCH_LINES = 4000;  // 每块至少推进的逻辑行数
   const FILL_BUDGET_MS = 6;       // 每块时间预算（超过一帧即长任务，故取 6ms）
+  const LAYOUT_CHUNK_CHARS = 60000; // 每片排版的原文字符数。实测 6 万字符的首片 ≈ 2ms，
+                                    // 产出约 8 千逻辑行（33 屏以上）—— 既够首屏，又远低于一帧预算。
   let fillToken = 0;
+
+  // lineFirstVisualRow 用 Int32Array 省内存（10 万行下 400KB vs 普通数组 3.2MB），
+  // 但 lines 会随排版分片增长，容量要跟着走。翻倍摊还，单次拷贝成本可忽略。
+  function ensureLineFirstCapacity(n) {
+    const cur = state.lineFirstVisualRow;
+    if (cur && cur.length >= n) return;
+    const next = new Int32Array(Math.max(n, cur ? cur.length * 2 : 1024));
+    if (cur) next.set(cur);
+    state.lineFirstVisualRow = next;
+  }
+
+  // 把一批段落按「段间空行」追加进 state.lines —— 规则与 simpleLayoutLines 的 interleave 一致。
+  // 始终对同一个数组追加，因此先交付的前缀不会被后到的内容改动。
+  function appendParasToLines(paras) {
+    const lines = state.lines;
+    for (let i = 0; i < paras.length; i++) {
+      if (lines.length) lines.push('');
+      lines.push(paras[i]);
+    }
+    ensureLineFirstCapacity(lines.length);
+  }
+
+  // 跑一片排版（断句 + 按句分段），把结果追加进 state.lines。返回全文是否已排完。
+  function layoutFillChunk() {
+    const text = currentTextInfo().text;
+    const r = Layout.layoutParasFrom(text, state.layoutCursor, LAYOUT_CHUNK_CHARS);
+    appendParasToLines(r.paras);
+    state.layoutCursor = r.cursor;
+    if (r.done) state.layoutDone = true;
+    return state.layoutDone;
+  }
+
+  // 同步把排版补齐到逻辑行 li。只在用户抢在空闲补齐完成前跳到文件中后部
+  // （滚动 / 搜索 / 朗读）时触发，会带来一次同步停顿，属已知取舍（与 ensureRowsFor 同性质）。
+  function ensureLinesUpTo(li) {
+    if (state.layoutDone || li < state.lines.length) return;
+    for (let guard = 0; guard < 500000 && !state.layoutDone && state.lines.length <= li; guard++) {
+      layoutFillChunk();
+    }
+  }
+
+  // 同步补齐全部排版（朗读要求全量行；177ms 的代价相对「念几十小时」可忽略）
+  function ensureAllLines() {
+    if (state.layoutDone) return;
+    for (let guard = 0; guard < 500000 && !state.layoutDone; guard++) layoutFillChunk();
+  }
 
   // 把逻辑行 [from, to) 的视觉行追加进 state.visualRows。与改造前的全量循环逐字一致。
   function buildRowsRange(from, to, effWidth) {
+    ensureLineFirstCapacity(to);                 // lines 随排版分片增长，容量可能不够
     const rows = state.visualRows, lf = state.lineFirstVisualRow;
     let vri = rows.length;
     for (let i = from; i < to; i++) {
@@ -1281,11 +1356,19 @@
   // canvas 首次测量一个字符约 148µs（要走完整字体回退链），240 条采样的最坏代价约 35ms，
   // 正好把分块省下来的时间吐回去。前缀外推不碰任何新字符，成本为 0。
   function estimateVisualRows() {
-    const n = state.lines.length, have = state.visualRows.length;
+    const have = state.visualRows.length;
     const warm = state.computedLines;
-    if (warm <= 0 || warm >= n) return have;
-    const extraPerLine = Math.max(0, have / warm - 1);
-    return have + Math.round((n - warm) * extraPerLine);
+    if (warm <= 0) return have;
+    // 排版分片未完成时 lines.length 只是前缀，总数得用「字符比例外推」的估算值；
+    // 排完之后 lines.length 就是精确值。
+    const total = state.layoutDone ? state.lines.length : Math.max(state.lines.length, state.linesTotalEst);
+    if (warm >= total) return have;
+    // 视觉行总数 = 总逻辑行数 × (已算视觉行 / 已算逻辑行)。
+    // 不能写成「have + 剩余行数 × 折行增量」—— 那样算的是**折行额外多出的行**，
+    // 而「剩余逻辑行本身」是另一个量；排版模式下每逻辑行≈1 视觉行（不折行）时
+    // 折行增量≈0，公式会退化成「总行数≈已算行数」，spacer 高度只剩一屏，
+    // 还会连带把 gutter（行号列宽）算小 → 正文可用宽度变大 → 折行位置改变。
+    return Math.round(total * have / warm);
   }
 
   // 把「已知/估算的总视觉行数」落到 DOM（spacer 高度、行号列宽、状态栏行数）
@@ -1310,6 +1393,7 @@
   // 页码以「当前滚动位置对应的视觉行」为锚，故页数修正不会让正文跳位。
   function finishFill() {
     state.totalVisualRows = state.visualRows.length;
+    state.linesTotalEst = state.lines.length;   // 估算转精确
     applyLayoutMetrics();
     buildPages();
     drawRuler();
@@ -1318,20 +1402,25 @@
     updatePageInfo();
   }
 
-  // 空闲分块续算。rIC 在后台标签页会被浏览器自然节流，正好对应「后台暂停重排」。
+  // 空闲分块续算，两个阶段共用同一个时间预算：
+  //   ① 排版分片（lines 增长）—— 首屏只跑了首片，剩下的在这里接着排；
+  //   ② 视觉行分块    —— 为已排出的逻辑行构建视觉行。
+  // 必须①在前：lines 不增长，②就没有新东西可算。rIC 在后台标签页会被浏览器自然节流，
+  // 正好对应「后台暂停重排」。
   function scheduleFill(token, effWidth) {
     const ric = (typeof window.requestIdleCallback === 'function') ? window.requestIdleCallback.bind(window) : null;
     const step = () => {
       if (token !== fillToken) return;                 // 已被新一代重排取代
-      const n = state.lines.length;
       const t0 = performance.now();
-      while (state.computedLines < n) {
-        const to = Math.min(n, state.computedLines + FILL_BATCH_LINES);
+      while (!state.layoutDone && performance.now() - t0 < FILL_BUDGET_MS) {
+        layoutFillChunk();
+      }
+      while (state.computedLines < state.lines.length && performance.now() - t0 < FILL_BUDGET_MS) {
+        const to = Math.min(state.lines.length, state.computedLines + FILL_BATCH_LINES);
         buildRowsRange(state.computedLines, to, effWidth);
         state.computedLines = to;
-        if (performance.now() - t0 >= FILL_BUDGET_MS) break;
       }
-      if (state.computedLines >= n) { finishFill(); return; }
+      if (state.layoutDone && state.computedLines >= state.lines.length) { finishFill(); return; }
       if (ric) ric(step, { timeout: 250 }); else setTimeout(step, 1);
     };
     if (ric) ric(step, { timeout: 250 }); else setTimeout(step, 1);
@@ -1339,31 +1428,35 @@
 
   // 保证逻辑行 [0, lineIndex] 的视觉行已构建。兜底路径：滚动 / 搜索 / 朗读落到未算区时调用。
   function ensureRowsUpTo(lineIndex) {
-    const n = state.lines.length;
-    if (state.computedLines >= n) return;
     const li = Math.floor(lineIndex);
     if (!isFinite(li) || li < 0) return;
+    ensureLinesUpTo(li);                // 该行可能连排版都还没排到（分片未补齐时）
+    const n = state.lines.length;
+    if (state.computedLines >= n) return;
     const to = Math.min(n, li + 1);
     if (to <= state.computedLines) return;
     buildRowsRange(state.computedLines, to, state.effWidth);
     state.computedLines = to;
-    if (state.computedLines >= n) finishFill();
+    if (state.computedLines >= n && state.layoutDone) finishFill();
   }
 
   // 可见区间的行若还没算出来就同步补到那里。正常情形下分块在首屏后一两百毫秒内补完，
   // 此路径只在用户抢在补齐完成前拖到文件中后部时触发（会带来一次同步停顿，属已知取舍）。
   function ensureRowsFor(bottomPx) {
-    const nLines = state.lines.length;
-    if (state.computedLines >= nLines) return;
     const lh = state.lineHeight || 1;
     const needRow = Math.floor(bottomPx / lh) + 12;
     if (state.visualRows.length >= needRow) return;
+    // 上限用「全量行数」而非「已排出的前缀长度」—— 排版分片未完成时 lines.length 只是前缀，
+    // 拿它当上限会让滚到后部时补不到位。
+    const totalLines = state.layoutDone ? state.lines.length : Math.max(state.lines.length, state.linesTotalEst);
+    if (state.layoutDone && state.computedLines >= state.lines.length) return;
     // 视觉行 → 逻辑行：按「逻辑行数 / 视觉行总数」比例外推，不够就翻倍再试
-    const ratio = nLines / Math.max(1, state.totalVisualRows);
-    let guess = Math.min(nLines - 1, Math.ceil(needRow * ratio) + 64);
-    for (let guard = 0; guard < 12 && state.visualRows.length < needRow && state.computedLines < nLines; guard++) {
+    const ratio = totalLines / Math.max(1, state.totalVisualRows);
+    let guess = Math.min(totalLines - 1, Math.ceil(needRow * ratio) + 64);
+    for (let guard = 0; guard < 12 && state.visualRows.length < needRow; guard++) {
+      if (state.layoutDone && state.computedLines >= state.lines.length) break;
       ensureRowsUpTo(guess);
-      guess = Math.min(nLines - 1, Math.round(guess * 1.8) + 1000);
+      guess = Math.min(totalLines - 1, Math.round(guess * 1.8) + 1000);
     }
   }
 
@@ -1374,8 +1467,12 @@
     const n = state.lines.length;
     const vw = viewport.clientWidth;
     state.layoutWidth = vw;       // 本次布局的宽度基准，applyLayoutMetrics 复用（见该函数注释）
-    // 先用逻辑行数估算 gutter（最终会根据真实视觉行数修正，但 contentWidth 需要先有 gutter）
-    state.gutter = Math.max(48, String(n).length * (state.fontSize * 0.62) + 20);
+    // 先用逻辑行数估算 gutter（最终会根据真实视觉行数修正，但 contentWidth 需要先有 gutter）。
+    // 分片未完成时 lines.length 只是前缀 —— 必须用全量行数估算：gutter 偏窄会把正文可用宽度
+    // 撑大、折行位置随之改变，渲染结果就与一次性算完不一致了。gutter 只取位数，
+    // 所以只要估算不跨数量级（10 万级 vs 1 千级）就足够稳。
+    const nEst = state.layoutDone ? n : Math.max(n, state.linesTotalEst);
+    state.gutter = Math.max(48, String(nEst).length * (state.fontSize * 0.62) + 20);
     // .tx 有 padding: 0 16px，还要留出 canvas 与 DOM 字体/测量差异的安全缓冲
     // 让 JS 预估宽度比实际可用宽度更窄，从而预测行数 >= 浏览器实际行数，避免行高低估
     const isRead = document.body.classList.contains('reading-mode');
@@ -1391,11 +1488,11 @@
     state.effWidth = effWidth;
 
     // 生成真实显示行（视觉行）：只同步算前 WARM_LINES 行，其余交给空闲分块。
-    // 小文件（n <= WARM_LINES）一切照旧 —— 完全同步、无任何延迟，行为与改造前一致。
+    // 小文件（n <= WARM_LINES 且排版已排完）一切照旧 —— 完全同步、无任何延迟。
     fillToken++;                                          // 作废上一轮未完成的续算
     state.visualRows = [];
-    state.lineFirstVisualRow = new Int32Array(n);
     state.maxTextWidth = 0;
+    ensureLineFirstCapacity(n);                           // lines 会随排版分片增长，容量自适应
     const warm = Math.min(n, WARM_LINES);
     buildRowsRange(0, warm, effWidth);
     state.computedLines = warm;
@@ -1405,10 +1502,18 @@
     buildPages();
     drawRuler();          // 标尺随布局重绘（宽度/边界标记同步）
     updateWrapGuide();    // 边界虚线同步
-    if (warm < n) scheduleFill(fillToken, effWidth);
+    // 排版没排完（lines 还会长）或视觉行没算完，都要启动空闲补齐
+    if (warm < n || !state.layoutDone) scheduleFill(fillToken, effWidth);
   }
 
-  /* ---------- 分页（基于视觉行，两行重叠衔接） ---------- */
+  /* ---------- 分页（基于视觉行，两行重叠衔接） ----------
+   * 已知取舍（PLAN-C §7.1 记录）：分片未补齐时页数会偏小，补齐后修正。原因是 vh 读数的
+   * 时机而非行数估算：spacer 宽 = 视口内容宽时，纵向滚动条会挤出一根横向滚动条，可用高从
+   * 448 掉到 436 → rowsPerScreen 由 10 变 9 → 每页步进由 8 行变 7 行 → 总页数 50130 → 57241。
+   * 而 Chrome 的滚动条占位要**两轮布局**才落定（第一轮算 scrollWidth、第二轮才加滚动条），
+   * 所以在 computeLayout 里即使写完宽度立刻同步 flush 也读不到 436（实测加 void offsetHeight
+   * 无效，已删）。分片下这一刻的 totalVisualRows 本来也是估算值，一并由 finishFill 重算。
+   * 实测行数估算误差仅 0.09%，页数这 12% 全部来自 vh 时机，且只在补齐前的约 1.6s 内存在。 */
   function buildPages() {
     const vh = viewport.clientHeight || 1;
     const n = state.totalVisualRows;   // 分块补齐前是采样估算值，补齐后由 finishFill 重算
@@ -1733,7 +1838,92 @@
       return segs;
     }
 
-    return { SENT_END, SHORT_SENT, splitSentences, simpleLayout, simpleLayoutLines, layoutParas, segmentByLongPunct };
+    /* ---------- 增量排版（PLAN-C §7.1：把「全文断句」移出首屏关键路径） ----------
+     * 逐段实测（8.4MB / 10 万行 / bench/out/split-bench.js）：全文断句 177ms，其中
+     *   B 逐换行回调 36 + C split('\n') 9 + D 逐行 SPLIT_RE 57 + E 逐句清洗 40 + part 循环 34
+     * 而首屏只看得见约 40 行 —— 为 40 万行准备是纯浪费。
+     *
+     * 为什么不能按 part 切：parts 由 LONG_PUNCT_SPLIT 切出，而普通中文文本（及基准样本）
+     * 往往**一个长标点都没有**，parts 长度就是 1，整篇是一个块，切不动。故必须切在**行边界**上。
+     *
+     * 为什么切在行边界是等价的：layoutParas 是顺序流，每个 para 在「非连续短句」处定型；
+     * 只要切点满足
+     *   ① 该 \n 在 splitSentences 里会被**保留**（即它是句边界，前面可隔着收尾符号是句末标点），
+     *   ② 切点后一个字符既不是收尾符号（否则下一片会把内容 appendToPrev 到上一片，而下一片
+     *      的 paras 是空数组，会走不到 appendToPrev 分支 → 丢字），
+     *      也不是长标点字符（否则会把一个长标点串拦腰截断），
+     * 那么切点之前的每一条 para 都已定型，切片独立跑 layoutParas 的结果与全文逐项一致。
+     * 这条性质由 bench/out/c3-split-equiv.js 对新旧实现做逐项差分验证。
+     * ------------------------------------------------------------------ */
+
+    // 长标点串的**单个**组成字符（不含 g，避免 lastIndex 状态；用于切点避让）
+    const LONG_PUNCT_CHAR = /[—―‒–﹘－─\-…⋯]/;
+
+    // p 处（\n 的下标）是否是可以安全切分的边界。三条同时成立才安全：
+    //   ① 该 \n 在 splitSentences 里会被**保留**（前面隔着收尾符号能碰到句末标点）；
+    //   ② 其后一个字符既不是收尾符号（否则下一片 paras 为空、走不到 appendToPrev 分支，
+    //      会把收尾符号连同挂起的长标点一起丢掉），也不是长标点字符（否则拦腰截断长标点串）；
+    //   ③ **右侧第一个句子必须是长句**（> SHORT_SENT）。这条最关键，也最容易漏：
+    //      短句合并是跨句的 —— 连续短句（≤ SHORT_SENT）并成同一段，而下一片的 paras
+    //      是新数组，接不上。右侧首句为长句时 nextShort=false，左侧无论长短都会在切点处
+    //      breakAfter，前缀才真正定型。（实测：不带 ③ 时 '甲。\n乙。\n…' 这类全短句文本
+    //      会被切成一堆独立段，与全文的单一合并段不符。）
+    function isSafeCutAt(text, p) {
+      let i = p - 1;
+      if (i >= 0 && text.charCodeAt(i) === 13) i--;          // \r\n：\r 视为透明
+      while (i >= 0 && CLOSE_CHAR.test(text[i])) i--;        // 收尾符号视为透明（归入前句）
+      if (!(i >= 0 && SENT_END.has(text[i]))) return false;  // ①
+      if (p + 1 >= text.length) return true;                 // 切在文末，无需再看
+      const c = text[p + 1];
+      if (CLOSE_CHAR.test(c) || LONG_PUNCT_CHAR.test(c)) return false;   // ②
+      // ③ 右侧首句够长即安全。数到 ≥ SHORT_SENT 个非空白字符就可断定
+      //    （实际句长 = 这些字符 + 至少 1 个句末标点 > SHORT_SENT）。够不着就保守拒绝。
+      let n = 0;
+      for (let e = p + 1; e < text.length; e++) {
+        const ch = text[e];
+        if (ch === '\n') return false;            // 首句在切点附近没结束 → 保守拒绝
+        if (SENT_END.has(ch)) return n >= SHORT_SENT;
+        if (ch !== ' ' && ch !== '\t' && ch !== '\r') n++;
+        if (n >= SHORT_SENT) return true;
+      }
+      return false;
+    }
+
+    // 从 target 起向后找最近的**安全**换行，返回「下一个字符」的下标（即切片终点）。
+    // 找不到就一路退到全文末尾 —— 最坏退化成一次性处理，结果仍然正确（只是不快）。
+    function safeCut(text, target) {
+      const total = text.length;
+      let i = target;
+      for (let guard = 0; guard < 256 && i < total; guard++) {
+        const p = text.indexOf('\n', i);
+        if (p < 0) return total;
+        if (isSafeCutAt(text, p)) return p + 1;
+        i = p + 1;
+      }
+      return total;
+    }
+
+    // 文本是否适合分片：含 \r（\r\n 或旧 Mac 单 \r）时归一化会改变长度，
+    // 使「原文位置 → 归一化后位置」的对应关系不再是一对一，切点判定会失准；
+    // 这类文件罕见，直接退化为一次性处理。
+    function canChunk(text) { return text.indexOf('\r') < 0; }
+
+    /**
+     * 增量排版：从 cursor 起处理约 minChars 个字符，返回一个**稳定前缀**。
+     * @returns {{paras: string[], cursor: number, done: boolean}}
+     */
+    function layoutParasFrom(text, cursor, minChars) {
+      const total = text.length;
+      if (cursor >= total) return { paras: [], cursor: total, done: true };
+      let end = cursor + Math.max(1, minChars | 0);
+      if (end >= total) end = total;
+      else end = safeCut(text, end);
+      const paras = layoutParas(text.slice(cursor, end));
+      return { paras: paras, cursor: end, done: end >= total };
+    }
+
+    return { SENT_END, SHORT_SENT, splitSentences, simpleLayout, simpleLayoutLines, layoutParas, segmentByLongPunct,
+             layoutParasFrom, canChunk };
   })();
 
   /* ============================================================================
@@ -2589,10 +2779,13 @@
     state.totalVisualRows = 0;
     state.effWidth = 0;
     state.layoutWidth = 0;
+    state.layoutCursor = 0;
+    state.layoutDone = false;
+    state.linesTotalEst = 0;
     fillToken++;                        // 作废尚未跑完的分块续算，避免往空状态里追加视觉行
     state.totalHeight = 0;
     state.visualRows = [];
-    state.lineFirstVisualRow = [];
+    state.lineFirstVisualRow = new Int32Array(0);
     state.maxTextWidth = 0;
     state.pages = [];
     state.fileName = '';
@@ -2673,6 +2866,8 @@
     currentMatchIndex = -1; currentMatchLine = -1; currentMatchStart = -1; currentMatchEnd = -1;
     if (!state.lines.length) { searchListEl.innerHTML = '<div class="empty-list">尚未载入文件</div>'; updateMatchInfo(); return; }
     if (!q) { searchListEl.innerHTML = '<div class="empty-list">输入关键词定位到文本所在行</div>'; updateMatchInfo(); return; }
+    // 搜索要扫全部逻辑行，而排版分片可能只排到前几千行 —— 先同步补全（幂等，只付一次）
+    ensureAllLines();
     const wild = wildcardToRegExp(q);   // 含 * / ? 时走通配匹配，否则退回普通子串匹配
     const ql = wild ? '' : q.toLowerCase();
     for (let i = 0; i < state.lines.length; i++) {

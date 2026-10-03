@@ -123,6 +123,13 @@ async function launchBrowser({ port, profileDir, windowSize = '1400,900', extraA
     '--disable-background-networking',
     '--disable-sync',
     '--disable-features=Translate,MediaRouter',
+    // 无头窗口被视为「不可见 / 被遮挡」时，Chrome 会把 requestIdleCallback 和定时器
+    // 节流到「几乎不跑」。本项目的空闲补齐（排版分片 + 视觉行分块）正是挂在 rIC 上的，
+    // 被节流会让「补齐」看起来永不发生（实测 stLines 卡在同步预热值不动）。
+    // 真实桌面场景里页面在前台，rIC 正常调度 —— 这三个开关是让无头逼近该行为。
+    '--disable-background-timer-throttling',
+    '--disable-renderer-backgrounding',
+    '--disable-backgrounding-occluded-windows',
     '--window-size=' + windowSize,
     '--remote-debugging-port=' + port,
     '--user-data-dir=' + profileDir,
