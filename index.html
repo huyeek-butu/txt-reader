@@ -922,19 +922,30 @@
   /* ---------- 测量 canvas ---------- */
   const mCanvas = document.createElement('canvas');
   const mctx = mCanvas.getContext('2d');
-  // 单字符像素宽度缓存：同文档字符集有限（常用字几千个），命中后免 measureText 调用。
+  // 单字符像素宽度表：按 UTF-16 code unit 直接下标访问（0x10000 → 128KB Float32）。
+  // 原实现是 Map<string, number>：每次查表都要按 code unit 命中一个字符串键。
+  // wrapText 是重排的第一热点（CPU 采样：占纯计算约 48%），而查表是它的内循环，
+  // 故换成类型化数组做纯下标访问。0 表示「未测量」，测出宽度为 0 的字符存一个极小
+  // 正数占位，避免被反复重测。
   // 字体/字号变化时必须清空（applyFont 内），否则行宽会失真。
-  const widthCache = new Map();
-  function applyFont() { mctx.font = state.fontSize + 'px ' + state.fontFamily; widthCache.clear(); }
+  const CHAR_W = new Float32Array(0x10000);
+  function applyFont() { mctx.font = state.fontSize + 'px ' + state.fontFamily; CHAR_W.fill(0); }
   function textWidth(s) { return mctx.measureText(s).width; }
+  function charWidth(code) {
+    const cached = CHAR_W[code];
+    if (cached !== 0) return cached;
+    const measured = mctx.measureText(String.fromCharCode(code)).width;
+    CHAR_W[code] = measured > 0 ? measured : 1e-4;
+    return CHAR_W[code];
+  }
   function measureWrapRows(text, maxWidth) {
     return wrapText(text, maxWidth).length;
   }
   // 按 maxWidth 把一段文本拆成真实显示行（视觉行）
-  // 优化：单字符宽度缓存 + 单次扫描贪心。
-  // 原实现每行做多次二分 measureText（O(每行字符数·log)），
+  // 优化：单字符宽度表 + 单次扫描贪心。
+  // 原实现在此基础上每行做多次二分 measureText（O(每行字符数·log)），
   // 大文件会触发百万级同步 measureText 调用、钉死主线程导致界面卡死。
-  // 新实现每个字符仅在首次测量（缓存命中后为零开销查表），整体 O(总字符数)，
+  // 现实现每个字符仅在首次测量（命中后为零开销查表），整体 O(总字符数)，
   // 大文件排版提速约 100× 以上，且仍保持“真实显示行”的近似精度。
   function wrapText(text, maxWidth) {
     if (maxWidth <= 0) return [''];
@@ -943,8 +954,7 @@
     const rows = [];
     let start = 0, w = 0;
     for (let i = 0; i < n; i++) {
-      let cw = widthCache.get(text[i]);
-      if (cw === undefined) { cw = mctx.measureText(text[i]).width; widthCache.set(text[i], cw); }
+      const cw = charWidth(text.charCodeAt(i));
       if (i > start && w + cw > maxWidth) {
         rows.push(text.slice(start, i));   // 当前行已满，断开（贪心：能塞就塞）
         start = i; w = cw;
@@ -958,6 +968,45 @@
 
   /* ---------- 编码检测 ---------- */
   function decodeBytes(bytes, enc) { try { return new TextDecoder(enc, { fatal: false }).decode(bytes); } catch (e) { return null; } }
+
+  /* ---------- 解码 / 排版结果缓存（PLAN-C 阶段二） ----------
+   * 症状：改字号、切排版开关、松标尺每次都重新解码全文（10 万行 ≈ 8.4MB）并重跑
+   * 全文断句。CPU 采样显示 decode 约占纯计算 3%、simpleLayout 族约 25%，其中
+   * 相当部分是「输入没变却重算」。
+   * 做法：用「版本号」作缓存键，而不是拿大字符串本身当 Map 键 —— 对大字符串做哈希
+   * 是 O(n)，比省下来的还贵。decodeVersion 只在 state.bytes 被替换时自增，enc 变化
+   * 由缓存键里的 enc 字段负责失效。
+   * 纪律：任何写 state.bytes 的地方都必须调 invalidateDecode()。 */
+  let decodeVersion = 0;
+  let decodeCache = { version: -1, enc: null, text: '', charCount: 0 };
+  let simpleCache = { version: -1, text: null, result: null };
+  function invalidateDecode() { decodeVersion++; }
+  // 字符数（不含换行）与正文同源同寿命：一起算、一起缓存，避免每次重排再扫一遍全文。
+  function currentTextInfo() {
+    if (decodeCache.version !== decodeVersion || decodeCache.enc !== state.enc) {
+      const text = decodeBytes(state.bytes, state.enc) || '';
+      // 只数一遍换行符再相减。原实现是 text.replace(/\r\n|\r|\n/g,'').length ——
+      // 那会为 8MB 正文再分配一个同量级的新字符串，纯属浪费。
+      let charCount = text.length;
+      for (let i = 0, n = text.length; i < n; i++) {
+        const c = text.charCodeAt(i);
+        if (c === 10 || c === 13) charCount--;
+      }
+      decodeCache = { version: decodeVersion, enc: state.enc, text: text, charCount: charCount };
+    }
+    return decodeCache;
+  }
+  function currentText() { return currentTextInfo().text; }
+  // 全文「按句分段」的逻辑行按 (版本, 原文) 缓存：排版开关来回切时两个方向都能命中。
+  // 缓存的是**逻辑行数组**而不是拼接后的大字符串 —— 主窗口要的本来就是数组，
+  // 缓存字符串会逼着每次重排再 join + split 一轮（各 8MB 级）。
+  // text 用 === 比较：currentText() 返回同一个字符串引用，走快速路径，O(1)。
+  function linesCached(text) {
+    if (simpleCache.version === decodeVersion && simpleCache.text === text) return simpleCache.lines;
+    const lines = Layout.simpleLayoutLines(text);
+    simpleCache = { version: decodeVersion, text: text, lines: lines };
+    return lines;
+  }
   function scoreText(text) {
     let errors = 0, cjk = 0, punct = 0;
     for (let i = 0; i < text.length; i++) {
@@ -1080,14 +1129,18 @@
   // 使主窗口显示与「简单排版」弹窗采用一致规则，避免重复实现。
   function applyLayoutToLines() {
     if (!state.bytes) return;
-    const text = decodeBytes(state.bytes, state.enc) || '';
+    const info = currentTextInfo();
+    const text = info.text;
     // 字符数始终按原文（不含换行）统计，与排版开关无关，保证状态栏稳定
-    state.charCount = text.replace(/\r\n|\r|\n/g, '').length;
+    state.charCount = info.charCount;
     stChars.textContent = state.charCount.toLocaleString();
-    let lines = text.split(/\r\n|\r|\n/);
+    let lines;
     if (state.layoutEnabled) {
-      const laid = Layout.simpleLayout(text);   // 复用同一模块：断句 + 按句分段 + 段间空行
-      if (laid) lines = laid.split('\n');       // 句子段落作为“逻辑行”，段落间空行自然形成段距
+      // 复用同一模块：断句 + 按句分段 + 段间空行（结果按版本缓存；排版开关来回切可命中）
+      lines = linesCached(text);
+      if (!lines.length) lines = text.split(/\r\n|\r|\n/);   // 空文本兜底，与原行为一致
+    } else {
+      lines = text.split(/\r\n|\r|\n/);
     }
     state.lines = lines;
     Speak.setLines(lines);   // 朗读队列与逻辑行保持同步（切排版 / 换文件都会经过这里）
@@ -1389,9 +1442,11 @@
     // 块内每句一段、段间空行，连续短句（≤ SHORT_SENT）视为对话，合并同一段不空行。
     // 标点组合处理：分隔线（装饰性长标点串）剔除；但「句内长标点 + 收尾符号」（如 ……”)）不丢符号——
     // 若长标点紧邻收尾符号，则长标点与收尾符号一并归入前一段末尾。
-    function simpleLayout(text) {
+    // 核心：长标点分块 + 块内按句分段 → 段落数组。被 simpleLayout / simpleLayoutLines 共用。
+    function layoutParas(text) {
       // 用捕获组切分，保留长标点串本身，便于区分「装饰分隔线」与「句内省略号」
-      const parts = (text || '').split(new RegExp('(' + LONG_PUNCT.source + ')'));
+      // （正则预编译为常量：原先每次调用都 new RegExp，等于每次重排都重复编译一遍）
+      const parts = (text || '').split(LONG_PUNCT_SPLIT);
       const paras = [];
       let pendingSep = '';
       const appendToPrev = (s) => { if (s && paras.length) paras[paras.length - 1] += s; };
@@ -1432,12 +1487,33 @@
           if (breakAfter) { paras.push(buf.join('')); buf = []; }
         }
       }
-      return paras.join('\n\n');
+      return paras;
+    }
+
+    // 「段落 → 空行 → 段落」的逻辑行数组，与 simpleLayout(x).split('\n') 逐项等价。
+    // 主窗口排版走这条路：原先要先 join 成整篇大字符串、再 split 回来，两次都是
+    // 8MB 级操作，纯属白做（10 万行实测可省一次全程扫描 + 一次大串分配）。
+    function simpleLayoutLines(text) {
+      const paras = layoutParas(text);
+      if (paras.length <= 1) return paras.slice();
+      const out = new Array(paras.length * 2 - 1);
+      for (let i = 0, j = 0; i < paras.length; i++) {
+        if (i) out[j++] = '';
+        out[j++] = paras[i];
+      }
+      return out;
+    }
+
+    function simpleLayout(text) {
+      return layoutParas(text).join('\n\n');   // 保留原字符串接口（导出与「简单排版」弹窗在用）
     }
 
     // 长标点串（破折号 ——、省略号 …… 及其连排，含各类横线变体）作为段落分隔符。
     // 横线类需连排 ≥2 个才视为分隔（单个 - 或 — 可能是正常字符）；省略号同样需连排 ≥2。
     const LONG_PUNCT = /[—―‒–﹘－─-]{2,}|[…⋯]{2,}/g;
+    // 预编译的「按长标点切分」正则（带捕获组，split 靠它保留分隔串本身）。
+    // 不带 g —— split 不需要，且带 g 的正则携带 lastIndex 状态。
+    const LONG_PUNCT_SPLIT = new RegExp('(' + LONG_PUNCT.source + ')');
     // 单个片段是否整体为长标点串（用于 simpleLayout 的挂起判定）
     const LONG_PUNCT_ONE = /^(?:[—―‒–﹘－─-]{2,}|[…⋯]{2,})$/;
     // 按长标点切分段落：长标点串替换为换行（与换行符同等参与分段），按换行切段，
@@ -1457,7 +1533,7 @@
       return segs;
     }
 
-    return { SENT_END, SHORT_SENT, splitSentences, simpleLayout, segmentByLongPunct };
+    return { SENT_END, SHORT_SENT, splitSentences, simpleLayout, simpleLayoutLines, layoutParas, segmentByLongPunct };
   })();
 
   /* ============================================================================
@@ -1573,23 +1649,44 @@
       }
       return q;
     }
+    /* ---------- 队列惰性化（PLAN-C 阶段二） ----------
+     * buildQueue 要遍历全部逻辑行、并对每一行再跑一次断句；10 万行约占纯重排成本
+     * 3~4%，而**未朗读时这份队列纯属白做**（而重排恰恰是最频繁的操作）。
+     * 故：不在朗读状态下 setLines 只记源行、标脏并清空队列（顺带省下 10 万项内存），
+     * 等真要念了再由 ensureQueue() 一次性构建。 */
+    let srcLines = [];
+    let queueDirty = false;
+    function ensureQueue() {
+      if (!queueDirty) return;
+      queue = buildQueue(srcLines);
+      queueDirty = false;
+      if (!(idx >= 0 && idx < queue.length)) idx = 0;
+    }
+
     function setLines(lines) {
-      const wasPlaying = playing;
-      const speakingText = cur ? cur.text : '';
+      srcLines = lines || [];
       anchorLine = null;                              // 逻辑行结构已重建，旧的选定行不再对应原文
-      queue = buildQueue(lines || []);
-      // 全文重排后（如切换「正文排版」）队列已换：按文本回找原句，找不到就回到开头
-      if (speakingText) {
-        const at = queue.findIndex((x) => x.text === speakingText);
-        idx = at >= 0 ? at : 0;
-      }
-      if (idx >= queue.length) idx = 0;
-      if (wasPlaying && !queue.length) { stop(); return; }
-      if (wasPlaying) {
+      if (playing || paused) {
+        // 正在朗读（含暂停）：必须立即按新行结构建好队列，并在新队列里续读当前句
+        const speakingText = cur ? cur.text : '';
+        queue = buildQueue(srcLines);
+        queueDirty = false;
+        // 全文重排后（如切换「正文排版」）队列已换：按文本回找原句，找不到就回到开头
+        if (speakingText) {
+          const at = queue.findIndex((x) => x.text === speakingText);
+          idx = at >= 0 ? at : 0;
+        }
+        if (idx >= queue.length) idx = 0;
+        if (!queue.length) { stop(); return; }
         cancelAll();                                  // 作废旧回调 + 清掉已预排队的旧块
         cur = null;
         if (paused) { emit('change'); }
         else schedule(Math.min(GAP_MS, 60));           // 用新队列续读当前句
+      } else {
+        // 未朗读：只记源行，队列留到真正要念时再建
+        queueDirty = true;
+        queue = [];
+        idx = 0;
       }
       emit('change');
     }
@@ -1768,9 +1865,9 @@
     function setAnchor(li) {
       const v = (li == null || !isFinite(li)) ? null : Math.max(0, Math.floor(Number(li)));
       anchorLine = (v == null || v === anchorLine) ? null : v;
-      // 未在朗读时同步待读索引，避免「已选定行」与「下一步」显示不一致。
+      // 未在朗读时不再同步待读索引：起点由 start() 每次按规则重算，此处同步并无消费方；
+      // 且队列已惰性化，为同步索引而提前构建整份队列反而得不偿失。
       // 暂停中（playing=true）不动 idx——resume 应从原句续读，而非跳走。
-      if (!playing && queue.length) idx = resolveStartIndex();
       emit('change'); emit('state');
     }
 
@@ -1778,6 +1875,7 @@
     function start() {
       if (!SUPPORTED) { showToast('当前浏览器不支持语音朗读'); return; }
       if (!hasChinese()) { showToast('未检测到中文语音，请在系统中安装中文语音包'); return; }
+      ensureQueue();                                  // 惰性队列：真要念了才构建
       if (!queue.length) { showToast('没有可朗读的内容'); return; }
       if (playing && paused) { resume(); return; }
       if (playing) return;
@@ -1825,6 +1923,7 @@
       emit('state');
     }
     function jumpTo(i) {
+      ensureQueue();                                  // 惰性队列：跳转前确保队列已建
       if (!queue.length) return;
       idx = Math.max(0, Math.min(i, queue.length - 1));
       cur = null;
@@ -1877,7 +1976,9 @@
     // 不再作为朗读起点，以免与「停止后从页首重新开始」的规则冲突。
     function restorePos() {
       const p = loadPos();
-      idx = (p && p.idx >= 0 && p.idx < queue.length) ? p.idx : 0;
+      // 惰性化后不在此校验 queue 范围：打开文件必经此处，为校验而提前建队列会把惰性抵消掉。
+      // 只记下位置，越界由 ensureQueue() 在真正朗读前统一 clamp。
+      idx = (p && p.idx >= 0) ? p.idx : 0;
       cur = null;
       emit('change'); emit('state');
     }
@@ -2238,6 +2339,7 @@
     activeIndex = index;
     const f = project.files[index];
     state.bytes = f.bytes;
+    invalidateDecode();                 // 正文已换 → 丢弃解码 / 排版结果缓存
     state.fileId = fileFingerprint(state.bytes);
     state.fileName = f.name; state.filePath = f.path;
     state.detected = detectEncoding(state.bytes);
@@ -2277,6 +2379,7 @@
     project.files = [];
     activeIndex = -1;
     state.bytes = null;
+    invalidateDecode();                 // 正文已清空 → 丢弃解码 / 排版结果缓存
     state.lines = [];
     state.lineHeights = [];
     state.offsets = [];
@@ -2714,8 +2817,9 @@
   updateExportBtn();
   exportBtn.addEventListener('click', () => {
     if (!state.bytes) { showToast('请先打开文件'); return; }
-    const text = state.layoutEnabled ? Layout.simpleLayout(decodeBytes(state.bytes, state.enc) || '')
-                                     : (decodeBytes(state.bytes, state.enc) || '');
+    const raw = currentText();
+    // 排版行数组里段落之间是空行占位；导出需要「段落 + 空行分隔」的原排布，故先滤掉占位再 join
+    const text = state.layoutEnabled ? linesCached(raw).filter(s => s !== '').join('\n\n') : raw;
     saveTextToFile(text, { source: 'main' });
   });
   layoutToggleBtn.classList.toggle('active', state.layoutEnabled);

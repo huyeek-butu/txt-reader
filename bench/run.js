@@ -29,18 +29,21 @@ const { pathToFileURL } = require('url');
 const { CDP, launchBrowser, waitForDevTools, findPageTarget, killBrowser, sleep } = require('./lib/cdp');
 
 const ROOT = path.resolve(__dirname, '..');
-const MAIN_HTML = path.join(ROOT, 'txt-reader.html');
+const DEFAULT_MAIN_HTML = path.join(ROOT, 'txt-reader.html');
 const SAMPLES_DIR = path.join(__dirname, 'samples');
 
 /* ---------- 参数 ---------- */
 function parseArgs(argv) {
   // outDir 默认 bench/out（已被 .gitignore 忽略）；基线快照用 --outdir bench/baseline 入库
-  const o = { rows: null, label: 'baseline', port: 9333, outDir: path.join(__dirname, 'out') };
+  // --file 可指向任意 HTML —— A/B 复测时用它分别指向「改前」与「改后」的副本，
+  // 交替跑才能把代码差异与环境漂移分开。
+  const o = { rows: null, label: 'baseline', port: 9333, outDir: path.join(__dirname, 'out'), file: DEFAULT_MAIN_HTML };
   for (let i = 2; i < argv.length; i++) {
     if (argv[i] === '--rows' && argv[i + 1]) o.rows = argv[++i].split(',').map(s => parseInt(s, 10));
     else if (argv[i] === '--label' && argv[i + 1]) o.label = argv[++i];
     else if (argv[i] === '--port' && argv[i + 1]) o.port = parseInt(argv[++i], 10);
     else if (argv[i] === '--outdir' && argv[i + 1]) o.outDir = path.resolve(process.cwd(), argv[++i]);
+    else if (argv[i] === '--file' && argv[i + 1]) o.file = path.resolve(process.cwd(), argv[++i]);
   }
   return o;
 }
@@ -65,6 +68,22 @@ const INSTALL_PROBE = `(() => {
     new MutationObserver(() => mark('stLinesUpdated'))
       .observe(st, { childList: true, characterData: true, subtree: true });
   } else B.errors.push('未找到 #stLines');
+
+  // 「字节就绪」刻度：openFile 里 state.bytes 赋值后紧接着就写 #stFile，
+  // 它之前是纯读盘（Blob.arrayBuffer），之后才进入解码与排版 —— 用它切开 IO 与计算。
+  const stFile = document.getElementById('stFile');
+  if (stFile) {
+    new MutationObserver(() => mark('ioDone'))
+      .observe(stFile, { childList: true, characterData: true, subtree: true });
+  } else B.errors.push('未找到 #stFile');
+
+  // 「排版完成」刻度：decodeAndRender 在 applyLayoutToLines() 之后才隐藏空态，
+  // 因此它能标出「解码 + 全文断句」这一段结束的时刻。
+  const emptyEl = document.getElementById('empty');
+  if (emptyEl) {
+    new MutationObserver(() => { if (emptyEl.classList.contains('hidden')) mark('layoutDone'); })
+      .observe(emptyEl, { attributes: true, attributeFilter: ['class'] });
+  } else B.errors.push('未找到 #empty');
 
   try {
     new PerformanceObserver((list) => {
@@ -142,7 +161,7 @@ const MEASURE_SCROLL = `(async () => {
 })()`;
 
 /* ---------- 单个样本的完整测量 ---------- */
-async function benchSample({ samplePath, rows, port, profileDir }) {
+async function benchSample({ samplePath, rows, port, profileDir, mainHtml }) {
   const result = { rows, file: path.basename(samplePath), ok: false, errors: [] };
   const child = await launchBrowser({ port, profileDir });
   let cdp = null;
@@ -157,7 +176,7 @@ async function benchSample({ samplePath, rows, port, profileDir }) {
     try { await cdp.send('HeapProfiler.enable'); } catch (e) { /* 同上 */ }
 
     const tNav = Date.now();
-    await cdp.send('Page.navigate', { url: pathToFileURL(MAIN_HTML).href });
+    await cdp.send('Page.navigate', { url: pathToFileURL(mainHtml).href });
     await cdp.waitFor(`document.readyState === 'complete'`, { timeoutMs: 30000, label: '页面加载' });
     await sleep(250);
     result.navToReadyMs = Date.now() - tNav;
@@ -178,15 +197,21 @@ async function benchSample({ samplePath, rows, port, profileDir }) {
     await cdp.send('DOM.setFileInputFiles', { nodeId, files: [samplePath] });
 
     await cdp.waitFor(`window.__bench.t.changeFired !== undefined`, { timeoutMs: 60000, label: 'change 事件' });
+    await cdp.waitFor(`window.__bench.t.ioDone !== undefined`, { timeoutMs: 180000, label: '读盘完成' });
+    await cdp.waitFor(`window.__bench.t.layoutDone !== undefined`, { timeoutMs: 180000, label: '排版完成' });
     await cdp.waitFor(`window.__bench.t.firstRowPainted !== undefined`, { timeoutMs: 180000, label: '首屏渲染' });
     await cdp.waitFor(`window.__bench.t.stLinesUpdated !== undefined`, { timeoutMs: 180000, label: '行数统计' });
     await sleep(300);
 
     result.timing = await cdp.eval(`(() => {
       const t = window.__bench.t;
+      const r = (a, b) => (t[a] !== undefined && t[b] !== undefined) ? +(t[a] - t[b]).toFixed(1) : null;
       return {
-        firstRowMs  : +(t.firstRowPainted - t.changeFired).toFixed(1),
-        stLinesMs   : +(t.stLinesUpdated - t.changeFired).toFixed(1)
+        ioMs       : r('ioDone', 'changeFired'),          // 读盘（Blob.arrayBuffer）
+        layoutMs   : r('layoutDone', 'ioDone'),           // 解码 + 全文断句（applyLayoutToLines）
+        renderMs   : r('firstRowPainted', 'layoutDone'),  // 全量排版视觉行 + 首屏渲染
+        firstRowMs : r('firstRowPainted', 'changeFired'),
+        stLinesMs  : r('stLinesUpdated', 'changeFired')
       };
     })()`, { awaitPromise: false });
 
@@ -230,7 +255,8 @@ async function domCounters(cdp) {
 /* ---------- 主流程 ---------- */
 async function main() {
   const args = parseArgs(process.argv);
-  if (!fs.existsSync(MAIN_HTML)) throw new Error('未找到主文件: ' + MAIN_HTML);
+  const mainHtml = path.resolve(args.file);
+  if (!fs.existsSync(mainHtml)) throw new Error('未找到待测主文件: ' + mainHtml);
   if (!fs.existsSync(SAMPLES_DIR)) throw new Error('样本目录不存在，先跑 node bench/gen-samples.js');
 
   let files = fs.readdirSync(SAMPLES_DIR).filter(f => /^sample-.*\.txt$/.test(f));
@@ -252,13 +278,14 @@ async function main() {
     browser: require('./lib/cdp').findBrowser(),
     node: process.version,
     platform: process.platform + ' ' + process.arch,
-    mainFileBytes: fs.statSync(MAIN_HTML).size,
-    mainFileLines: fs.readFileSync(MAIN_HTML, 'utf8').split('\n').length,
-    mainFileMd5: require('crypto').createHash('md5').update(fs.readFileSync(MAIN_HTML)).digest('hex'),
+    mainFile: path.basename(mainHtml),
+    mainFileBytes: fs.statSync(mainHtml).size,
+    mainFileLines: fs.readFileSync(mainHtml, 'utf8').split('\n').length,
+    mainFileMd5: require('crypto').createHash('md5').update(fs.readFileSync(mainHtml)).digest('hex'),
   };
 
   console.log('=== 基准开始 label=' + args.label + ' ===');
-  console.log('主文件: ' + report.env.mainFileMd5 + ' (' + report.env.mainFileLines + ' 行 / ' + report.env.mainFileBytes + ' B)');
+  console.log('主文件: ' + report.env.mainFile + ' ' + report.env.mainFileMd5 + ' (' + report.env.mainFileLines + ' 行 / ' + report.env.mainFileBytes + ' B)');
   console.log('');
 
   let port = args.port;
@@ -266,7 +293,7 @@ async function main() {
     const samplePath = path.join(SAMPLES_DIR, job.file);
     const sizeMB = (fs.statSync(samplePath).size / 1048576).toFixed(1);
     process.stdout.write('[bench] ' + job.file.padEnd(20) + ' (' + sizeMB + ' MB) ... ');
-    const r = await benchSample({ samplePath, rows: job.rows, port, profileDir: path.join(__dirname, '.profile', 'p' + port) });
+    const r = await benchSample({ samplePath, rows: job.rows, port, mainHtml, profileDir: path.join(__dirname, '.profile', 'p' + port) });
     report.results.push(r);
     if (r.ok) {
       console.log('OK  首屏 ' + r.timing.firstRowMs + 'ms | 排版切换 ' + r.syncActions.layoutToggleOffMs + '/' + r.syncActions.layoutToggleOnMs + 'ms | 堆 ' + r.heapAfterMB + 'MB | longtask ' + r.scroll.longTaskCount + '次(最长' + r.scroll.longTaskMaxMs + 'ms)');
@@ -288,12 +315,14 @@ function printTable(report) {
   if (!rows.length) { console.log('（无成功样本）'); return; }
   const cols = [
     ['样本', r => r.rows.toLocaleString() + ' 行'],
-    ['首屏(ms)', r => r.timing.firstRowMs],
-    ['行数就绪(ms)', r => r.timing.stLinesMs],
-    ['排版关(ms)', r => r.syncActions.layoutToggleOffMs],
-    ['排版开(ms)', r => r.syncActions.layoutToggleOnMs],
-    ['字号28(ms)', r => r.syncActions.font24to28Ms],
-    ['不换行(ms)', r => r.syncActions.wrapOffMs],
+    ['读盘', r => r.timing.ioMs],
+    ['解码+断句', r => r.timing.layoutMs],
+    ['排版+渲染', r => r.timing.renderMs],
+    ['首屏', r => r.timing.firstRowMs],
+    ['排版关', r => r.syncActions.layoutToggleOffMs],
+    ['排版开', r => r.syncActions.layoutToggleOnMs],
+    ['字号28', r => r.syncActions.font24to28Ms],
+    ['不换行', r => r.syncActions.wrapOffMs],
     ['堆(MB)', r => r.heapAfterMB],
     ['longtask', r => r.scroll.longTaskCount + '/' + r.scroll.longTaskMaxMs + 'ms'],
   ];
