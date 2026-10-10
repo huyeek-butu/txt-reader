@@ -87,6 +87,14 @@ async function main() {
     // 必须等真实页面的标记元素出现，才算导航完成。
     await cdp.waitFor(`document.getElementById('app') !== null && document.getElementById('fileInput') !== null`, { timeoutMs: 30000, label: '页面标记' });
     await sleep(300);
+    // 清残留摘录 + 重载（2026-10-10 实测踩坑）：profile 复用时上轮会话的摘录 localStorage
+    // 会让高亮 span 把文本节点切碎，selectAndAct 取到的首个 text node 只剩几个字符，
+    // setStart/setEnd 直接 IndexSizeError —— 用例 0 必须在干净状态下开样本
+    await cdp.eval(`localStorage.removeItem('txtreader-excerpts-v1'); true`, { awaitPromise: false });
+    await cdp.send('Page.reload');
+    await cdp.waitFor(`document.readyState === 'complete'`, { timeoutMs: 30000 });
+    await cdp.waitFor(`document.getElementById('app') !== null && document.getElementById('fileInput') !== null`, { timeoutMs: 30000, label: '页面标记(重载后)' });
+    await sleep(300);
 
     const openFiles = async (files) => {
       const { root } = await cdp.send('DOM.getDocument');

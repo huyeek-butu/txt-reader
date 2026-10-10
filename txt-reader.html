@@ -822,7 +822,7 @@
               <div class="help-header">
                 <div class="help-icon">📄</div>
                 <div class="help-title">TXT 阅读器</div>
-                <div class="help-version">v1.23</div>
+                <div class="help-version">v1.24</div>
               </div>
 
               <div class="help-section">
@@ -839,6 +839,7 @@
                   <li><strong>简单排版 · 按句分段</strong>：主窗口正文与「✒ 简单排版」弹窗共用同一规则——每句一段、段间空行、连续短对话合并不空行；逗号等非句末标点后的换行自动合并；破折号 —— / 省略号 …… 连排作强制分段。<strong>排版结果框可直接编辑</strong>，手动改过之后自动排版暂停，避免改动被冲掉。</li>
                   <li><strong>导出 / 保存</strong>：主窗口「⤓ 导出结果」与弹窗「保存为 TXT」支持把排版结果存为文件；浏览器支持时可直接覆盖原文件（需确认），不支持时自动降级为下载，绝不出现"点了没反应"。</li>
                   <li><strong>连续标点组合处理</strong>：<code>！！</code> <code>？！</code> <code>。。</code> 等连排／混排视为一个句末边界，原样保留不折叠；句末标点后的收尾引号括号（<code>！”</code> <code>。</code> <code>……”</code>）归入前一句，不会另起一行或被切到下一句首。</li>
+                  <li><strong>开头书名单独成段</strong>：文件第一个非空行若是书名（《…》形态取书名前缀；无书名号则须 ≤30 字且无句读标点）会单独成段，不再与正文粘连。</li>
                   <li><strong>语音朗读（TTS）</strong>：默认从<strong>当前页第一行</strong>按句朗读正文；正在朗读的行有明确标记（行首 ▶ + 下划线 + 左侧竖条 + 底色），随朗读进度同步移动；标记色随阅读底色深浅自动换档（浅底用深标记），任何主题组合下都清晰可辨。点击正文任意一行可手动选定朗读起点（再次点击取消）。支持暂停 / 继续 / 停止、0.5–2.0× 语速实时调节、中文语音选择、跟随滚动开关。句与句<strong>无缝衔接</strong>（下一句提前排入语音引擎，不再逐句等待），超长句自动二次切分（规避浏览器约 15 秒截断），后台切回可自愈。</li>
                   <li><strong>换行边界标尺</strong>：窗口顶端 Word 式标尺，拖动设定换行列边界，松开生效、双击恢复自动。</li>
                   <li><strong>进度自动保存</strong>：多文件独立记忆阅读位置，内容指纹防串档，一键恢复。</li>
@@ -1851,16 +1852,43 @@
         .filter(s => s.length > 0);
     }
 
+    // 文件开头的书名单独成段（v1.24）：首行书名（有/无书名号）通常没有句末标点，
+    // 断句前的「换行清洗」会把「书名\n正文」粘连成一段。这里把文件第一个非空行摘出来单独成段。
+    // 仅在全文开头生效（layoutParas 的 head 参数；分片排版只在 cursor===0 的首片开启），
+    // 避免把每个分片的首行都误当书名。判定保守，避免误伤普通首句：
+    //   ① 书名号形态：行首《…》前缀即书名（前缀内不含书名号），书名后的同行余文回流正文；
+    //   ② 无书名号形态：整行 ≤ 30 字且不含任何句读标点（句末/逗号/顿号/分号/冒号/省略号），
+    //      且首行之后还有内容（单行文件不存在「粘连」，无需处理）。
+    function extractHeadTitle(text) {
+      const t = (text || '').replace(/^[ \t\r\n\uFEFF]+/, '');
+      if (!t) return null;
+      const nl = t.indexOf('\n');
+      const first = (nl < 0 ? t : t.slice(0, nl)).trim();
+      if (!first || nl < 0 || !t.slice(nl + 1).trim()) return null;   // 只有首行、后面没内容 → 不动
+      const mBook = first.match(/^《[^《》]{1,40}》/);
+      if (mBook) {
+        const restOfLine = first.slice(mBook[0].length);
+        return { title: mBook[0], rest: restOfLine + '\n' + t.slice(nl + 1) };
+      }
+      if (first.length <= 30 && !/[。？！.!?…，,、；;：:]/.test(first)) {
+        return { title: first, rest: t.slice(nl + 1) };
+      }
+      return null;
+    }
+
     // 排版：长标点串（——/……等）与换行符同等视为段落边界，块间强制分段；
     // 块内每句一段、段间空行，连续短句（≤ SHORT_SENT）视为对话，合并同一段不空行。
     // 标点组合处理：分隔线（装饰性长标点串）剔除；但「句内长标点 + 收尾符号」（如 ……”)）不丢符号——
     // 若长标点紧邻收尾符号，则长标点与收尾符号一并归入前一段末尾。
     // 核心：长标点分块 + 块内按句分段 → 段落数组。被 simpleLayout / simpleLayoutLines 共用。
-    function layoutParas(text) {
+    // head=true（全文入口传）时先把文件开头的书名摘出来单独成段（v1.24）。
+    function layoutParas(text, head) {
+      const paras = [];
+      const h = head ? extractHeadTitle(text) : null;
+      if (h) paras.push(h.title);
       // 用捕获组切分，保留长标点串本身，便于区分「装饰分隔线」与「句内省略号」
       // （正则预编译为常量：原先每次调用都 new RegExp，等于每次重排都重复编译一遍）
-      const parts = (text || '').split(LONG_PUNCT_SPLIT);
-      const paras = [];
+      const parts = ((h ? h.rest : text) || '').split(LONG_PUNCT_SPLIT);
       let pendingSep = '';
       const appendToPrev = (s) => { if (s && paras.length) paras[paras.length - 1] += s; };
       for (const part of parts) {
@@ -1907,7 +1935,7 @@
     // 主窗口排版走这条路：原先要先 join 成整篇大字符串、再 split 回来，两次都是
     // 8MB 级操作，纯属白做（10 万行实测可省一次全程扫描 + 一次大串分配）。
     function simpleLayoutLines(text) {
-      const paras = layoutParas(text);
+      const paras = layoutParas(text, true);   // 全文入口：文件开头书名单独成段（v1.24）
       if (paras.length <= 1) return paras.slice();
       const out = new Array(paras.length * 2 - 1);
       for (let i = 0, j = 0; i < paras.length; i++) {
@@ -1918,7 +1946,7 @@
     }
 
     function simpleLayout(text) {
-      return layoutParas(text).join('\n\n');   // 保留原字符串接口（导出与「简单排版」弹窗在用）
+      return layoutParas(text, true).join('\n\n');   // 保留原字符串接口（导出与「简单排版」弹窗在用）；全文入口 → 书名单独成段
     }
 
     // 长标点串（破折号 ——、省略号 …… 及其连排，含各类横线变体）作为段落分隔符。
@@ -2026,7 +2054,8 @@
       let end = cursor + Math.max(1, minChars | 0);
       if (end >= total) end = total;
       else end = safeCut(text, end);
-      const paras = layoutParas(text.slice(cursor, end));
+      // 仅首片（cursor===0）开启书名提取，与全文排版逐项一致；后续分片不提取
+      const paras = layoutParas(text.slice(cursor, end), cursor === 0);
       return { paras: paras, cursor: end, done: end >= total };
     }
 
