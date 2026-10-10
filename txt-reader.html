@@ -332,6 +332,9 @@
   .panel-head .panel-actions { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; }
   .panel-head .panel-actions button { padding: 4px 8px; font-size: 12px; border-radius: 7px; background: transparent; border: none; color: var(--muted); cursor: pointer; }
   .panel-head .panel-actions button:hover { background: var(--row-hover); color: var(--text); }
+  /* 章节目录（v1.25）：章级平铺，节/讲/集级缩进一级 */
+  .toc-item { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .toc-item.lv1 { padding-left: 26px; color: var(--muted); }
 
   /* 翻页栏。必须允许换行，且在**任何视口**下都允许：
      ① 实测 375px 视口下右侧的「速度」控件组（.speed-box）会把文档宽度撑到 506px，
@@ -789,6 +792,17 @@
           </div>
         </section>
 
+        <section class="panel" id="tocPanel">
+          <div class="panel-head">
+            <button class="chev" data-target="tocPanel">▾</button>
+            <span>目录</span>
+            <span class="count" id="tocCount">0</span>
+          </div>
+          <div class="panel-body">
+            <div class="list" id="tocList"></div>
+          </div>
+        </section>
+
         <section class="panel" id="excerptPanel">
           <div class="panel-head">
             <button class="chev" data-target="excerptPanel">▾</button>
@@ -822,7 +836,7 @@
               <div class="help-header">
                 <div class="help-icon">📄</div>
                 <div class="help-title">TXT 阅读器</div>
-                <div class="help-version">v1.24</div>
+                <div class="help-version">v1.25</div>
               </div>
 
               <div class="help-section">
@@ -839,6 +853,7 @@
                   <li><strong>简单排版 · 按句分段</strong>：主窗口正文与「✒ 简单排版」弹窗共用同一规则——每句一段、段间空行、连续短对话合并不空行；逗号等非句末标点后的换行自动合并；破折号 —— / 省略号 …… 连排作强制分段。<strong>排版结果框可直接编辑</strong>，手动改过之后自动排版暂停，避免改动被冲掉。</li>
                   <li><strong>导出 / 保存</strong>：主窗口「⤓ 导出结果」与弹窗「保存为 TXT」支持把排版结果存为文件；浏览器支持时可直接覆盖原文件（需确认），不支持时自动降级为下载，绝不出现"点了没反应"。</li>
                   <li><strong>连续标点组合处理</strong>：<code>！！</code> <code>？！</code> <code>。。</code> 等连排／混排视为一个句末边界，原样保留不折叠；句末标点后的收尾引号括号（<code>！”</code> <code>。</code> <code>……”</code>）归入前一句，不会另起一行或被切到下一句首。</li>
+                  <li><strong>章节目录</strong>：侧栏「目录」面板自动识别章节标题（第X章/回/节/卷/部/篇/集/讲、楔子/序章/前言/后记等），单击跳转；节级标题缩进显示。排版开 / 关两种视图均可用。</li>
                   <li><strong>开头书名单独成段</strong>：文件第一个非空行若是书名（《…》形态取书名前缀；无书名号则须 ≤30 字且无句读标点）会单独成段，不再与正文粘连。</li>
                   <li><strong>语音朗读（TTS）</strong>：默认从<strong>当前页第一行</strong>按句朗读正文；正在朗读的行有明确标记（行首 ▶ + 下划线 + 左侧竖条 + 底色），随朗读进度同步移动；标记色随阅读底色深浅自动换档（浅底用深标记），任何主题组合下都清晰可辨。点击正文任意一行可手动选定朗读起点（再次点击取消）。支持暂停 / 继续 / 停止、0.5–2.0× 语速实时调节、中文语音选择、跟随滚动开关。句与句<strong>无缝衔接</strong>（下一句提前排入语音引擎，不再逐句等待），超长句自动二次切分（规避浏览器约 15 秒截断），后台切回可自愈。</li>
                   <li><strong>换行边界标尺</strong>：窗口顶端 Word 式标尺，拖动设定换行列边界，松开生效、双击恢复自动。</li>
@@ -1351,6 +1366,7 @@
     if (!state.layoutDone && (Speak.isPlaying() || Speak.isPaused())) ensureAllLines();
     Speak.setLines(state.lines);   // 朗读队列与逻辑行保持同步（切排版 / 换文件都会经过这里）
     Ex.onLinesChanged();           // 行集合重建 → 摘录按文本重定位（排版开关不漂移的关键）
+    Toc.schedule();                // 行集合重建 → 章节目录防抖重建（v1.25）
   }
 
   function decodeAndRender() {
@@ -1503,6 +1519,7 @@
     state.totalVisualRows = state.visualRows.length;
     state.linesTotalEst = state.lines.length;   // 估算转精确
     Ex.onLinesChanged();                        // 全量行已就绪 → 解析前缀期未能定位的摘录（PLAN-D）
+    Toc.schedule();                             // 全量行已就绪 → 章节目录全量重建（v1.25）
     applyLayoutMetrics();
     buildPages();
     drawRuler();
@@ -1818,16 +1835,37 @@
       return i >= 0 && SENT_END.has(text[i]);
     }
 
+    // 章节标题行识别（v1.25）：「第X章/回/节/卷/部/篇/集/讲」（X 为汉字/阿拉伯数字）
+    // 与楔子/序章/序言/前言/引言/后记/尾声/结语/附录/番外/终章等固定词；整行 ≤60 字
+    // （正文叙述行不会被误收）。返回匹配对象或 null；Toc 目录扫描共用同一规则（单一来源）。
+    const HEAD_RE = /^(第[0-9０-９一二三四五六七八九十百千万零〇两]{1,7}[章回节卷部篇集讲]|楔子|序章|序言|前言|引言|后记|尾声|结语|附录|番外|终章)/;
+    const HEAD_MAX = 60;   // 标题行长上限
+    function matchHeadLine(s) {
+      if (!s || s.length > HEAD_MAX) return null;
+      return HEAD_RE.exec(s);
+    }
+
     // 按句子结束标点切分，保留标点与尾随收尾符号；句子内空白压成单空格。返回句子数组（已 trim、去空）。
     function splitSentences(text) {
       let t = (text || '').replace(/\r\n?/g, '\n');
       // 断句前：清除“非句末标点后的换行”，确保同一句不被换行断开。
       // 仅当换行前构成句末标记（句末标点串，允许尾随收尾符号）时保留（视为句/段边界），否则删除；
       // 英文词中断行（前后均为字母/数字）补一个空格，避免单词粘连。
+      // v1.25：标题行（matchHeadLine 命中，≤60 字）行尾的换行同样保留为边界 —— 标题无句末
+      // 标点，否则换行清洗会把「第一章　xxx\n正文」粘连成段，目录与阅读体验双输。
+      let ls = 0;                                   // 当前换行所在行的行首（回调按序调用，游标单调推进）
       t = t.replace(/\n/g, (m, off) => {
         const prev = off > 0 ? t[off - 1] : '';
         const next = off + 1 < t.length ? t[off + 1] : '';
         if (endsSentenceAt(t, off)) return '\n';   // 句末（含“！””这类组合）→ 保留为边界
+        let nlPos = ls;
+        while (nlPos < off) {
+          const nl = t.indexOf('\n', nlPos);
+          if (nl < 0 || nl >= off) break;
+          nlPos = nl + 1;
+        }
+        ls = nlPos;
+        if (matchHeadLine(t.slice(ls, off))) return '\n';   // 标题行行尾 → 保留为边界
         // 删除换行但需避免粘连：前为字母/数字或逗号、后为字母/数字时补空格（英文词/逗号后断行）
         const prevWord = /[A-Za-z0-9]/.test(prev) || prev === ',' || prev === '，';
         const nextWord = /[A-Za-z0-9]/.test(next);
@@ -1918,6 +1956,11 @@
         let buf = [];
         for (let i = 0; i < sents.length; i++) {
           const s = sents[i];
+          if (matchHeadLine(s)) {                    // 标题句强制独立成段（v1.25）：先冲刷当前缓冲
+            if (buf.length) { paras.push(buf.join('')); buf = []; }
+            paras.push(s);
+            continue;
+          }
           buf.push(s);
           const isShort = s.length <= SHORT_SENT;
           const next = sents[i + 1];
@@ -2060,7 +2103,7 @@
     }
 
     return { SENT_END, SHORT_SENT, splitSentences, simpleLayout, simpleLayoutLines, layoutParas, segmentByLongPunct,
-             layoutParasFrom, canChunk };
+             layoutParasFrom, canChunk, matchHeadLine };
   })();
 
   /* ============================================================================
@@ -3283,6 +3326,60 @@
       rowRanges: (li) => hlMap.get(li) || null,
       count: () => (curEntries ? curEntries.length : 0),
     };
+  })();
+
+  /* ---------- 章节目录（v1.25） ----------
+   * 扫描逻辑行识别章节标题，单击跳转到该行。识别规则保守：
+   *   「第X章/回/节/卷/部/篇/集/讲」（X 为汉字数字/阿拉伯数字）与
+   *   楔子/序章/序言/前言/引言/后记/尾声/结语/附录/番外/终章等固定词，
+   *   且整行 ≤ 60 字（正文叙述行不会被误收）。节/讲/集缩进一级。
+   * 行集合变化时机（开文件 / 排版开关 / 分片补齐完成）由 schedule 防抖重建；
+   * 跳转复用摘录的定位路径（ensureRowsUpTo + lineFirstVisualRow）。 */
+  const Toc = (() => {
+    const MAX_ITEMS = 5000;   // 防御上限
+    let entries = [];
+    let timer = null;
+
+    function rebuild() {
+      const lines = state.lines || [];
+      const list = [];
+      for (let i = 0; i < lines.length && list.length < MAX_ITEMS; i++) {
+        const t = lines[i];
+        if (!t) continue;
+        const s = t.trim();
+        const m = Layout.matchHeadLine(s);   // 与排版引擎的「标题行单独成段」同一规则（单一来源）
+        if (!m) continue;
+        list.push({ li: i, text: s.length > 42 ? s.slice(0, 42) + '…' : s, level: /[节讲集]$/.test(m[1]) ? 1 : 0 });
+      }
+      entries = list;
+      renderPanel();
+    }
+    function schedule() {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => { timer = null; rebuild(); }, 300);   // 防抖：分片期间多次触发只扫最后一次
+    }
+    function renderPanel() {
+      const listEl = document.getElementById('tocList');
+      const cnt = document.getElementById('tocCount');
+      if (!listEl) return;
+      cnt.textContent = String(entries.length);
+      listEl.innerHTML = '';
+      if (!entries.length) { listEl.innerHTML = '<div class="empty-list">未识别到章节标题<br><small>识别：第X章/回/节/卷/部/篇/集/讲、楔子/序章/前言/后记等（整行 ≤60 字）</small></div>'; return; }
+      for (const en of entries) {
+        const item = document.createElement('div');
+        item.className = 'list-item toc-item' + (en.level ? ' lv1' : '');
+        item.textContent = en.text;
+        item.title = en.text;
+        item.addEventListener('click', () => {
+          ensureRowsUpTo(en.li);
+          const vr = state.lineFirstVisualRow[en.li];
+          if (!(vr >= 0)) return;
+          viewport.scrollTop = Math.max(0, vr * state.lineHeight - 80);
+        });
+        listEl.appendChild(item);
+      }
+    }
+    return { schedule };
   })();
 
   /* ---------- 通配符匹配引擎 ---------- */

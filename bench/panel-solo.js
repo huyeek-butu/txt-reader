@@ -79,7 +79,8 @@ async function main() {
       }
       const sb = document.getElementById('sidebar');
       o.sidebarH = sb.clientHeight;
-      o.gap = 24; // 12px gap × 2
+      o.panelCount = sb.querySelectorAll('.panel').length;   // v1.25 起四栏（文件/搜索/目录/摘录）
+      o.allSum = [...sb.querySelectorAll('.panel')].reduce((a, p) => a + Math.round(p.getBoundingClientRect().height), 0);
       return o;
     })()`, { awaitPromise: false, returnByValue: true });
     // 点击标题栏（target 指定栏、点标题文字而非按钮）；times 参数保留兼容旧调用
@@ -93,8 +94,9 @@ async function main() {
       await sleep(150);
     };
     const approx = (a, b, tol) => Math.abs(a - b) <= tol;
-    // 独占是否铺满：三栏高度和 = 侧栏内高 − 间隙（各栏标题条因按钮数不同不等高，不能假设统一 headerH）
-    const fillsSolo = (L) => approx(L.filePanel.h + L.searchPanel.h + L.excerptPanel.h, L.sidebarH - 24, 4);
+    // 独占是否铺满：全部面板高度和 = 侧栏内高 − 间隙（12px × (栏数−1)；v1.25 起四栏 3 间隙）
+    // 各栏标题条因按钮数不同不等高，不能假设统一 header 高
+    const fillsSolo = (L) => approx(L.allSum, L.sidebarH - 12 * (L.panelCount - 1), 4);
 
     /* ============ 用例 0：三栏默认均分 ============ */
     console.log('\n=== 用例 0 · 三栏默认均分 ===');
@@ -112,7 +114,7 @@ async function main() {
     check('其他两栏 body 隐藏', !L.filePanel.bodyShown && !L.excerptPanel.bodyShown);
     const headerH = L.filePanel.h;
     check('其他两栏收成标题条（<60px）', L.filePanel.h < 60 && L.excerptPanel.h < 60, headerH + '/' + L.excerptPanel.h);
-    check('独占栏铺满其余空间（三栏和=侧栏内高−间隙，±4px）', fillsSolo(L), 'sum=' + (L.filePanel.h + L.searchPanel.h + L.excerptPanel.h) + ' 期望≈' + (L.sidebarH - 24));
+    check('独占栏铺满其余空间（全部面板和=侧栏内高−间隙，±4px）', fillsSolo(L), 'allSum=' + L.allSum + ' 期望≈' + (L.sidebarH - 12 * (L.panelCount - 1)));
     check('独占栏 body 可见', L.searchPanel.bodyShown === true);
 
     /* ============ 用例 2：标题栏内按钮不触发独占 ============ */
@@ -135,7 +137,7 @@ async function main() {
     L = await readLayout();
     check('filePanel 成为独占栏', L.soloMode === true && L.filePanel.soloed === true);
     check('searchPanel 退回标题条', !L.searchPanel.soloed && !L.searchPanel.bodyShown && L.searchPanel.h < 60);
-    check('filePanel 铺满（三栏和=侧栏内高−间隙，±4px）', fillsSolo(L), 'sum=' + (L.filePanel.h + L.searchPanel.h + L.excerptPanel.h) + ' 期望≈' + (L.sidebarH - 24));
+    check('filePanel 铺满（全部面板和=侧栏内高−间隙，±4px）', fillsSolo(L), 'allSum=' + L.allSum + ' 期望≈' + (L.sidebarH - 12 * (L.panelCount - 1)));
 
     /* ============ 用例 4：再单击独占栏标题栏 → 还原 ============ */
     console.log('\n=== 用例 4 · 单击还原 ===');
@@ -153,7 +155,7 @@ async function main() {
     await clickHead('excerptPanel', 1);
     L = await readLayout();
     check('折叠态被独占清除（collapsed 移除）', L.excerptPanel.collapsed === false);
-    check('独占栏 body 可见且铺满', L.excerptPanel.bodyShown && fillsSolo(L), 'sum=' + (L.filePanel.h + L.searchPanel.h + L.excerptPanel.h) + ' 期望≈' + (L.sidebarH - 24));
+    check('独占栏 body 可见且铺满', L.excerptPanel.bodyShown && fillsSolo(L), 'allSum=' + L.allSum + ' 期望≈' + (L.sidebarH - 12 * (L.panelCount - 1)));
     await clickHead('excerptPanel', 1);      // 再单击 → 还原，收尾
     await sleep(150);
     L = await readLayout();
