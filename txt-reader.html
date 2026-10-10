@@ -19,6 +19,10 @@
     --spk-fill: color-mix(in srgb, var(--accent) 20%, transparent);
     --anc-mark: var(--accent2);
     --anc-fill: color-mix(in srgb, var(--accent2) 12%, transparent);
+    /* 摘录高亮（PLAN-D）：琥珀系，与主题色/朗读色解耦 —— 高亮是「内容标记」，
+       不随主题换色，明暗主题下都在深浅底上可辨（明底深字/暗底亮字均可读） */
+    --hlx-mark: #b45309;
+    --hlx-fill: rgba(217, 119, 6, 0.20);
   }
   html[data-theme="light"] {
     /* 护眼亮色：暖纸感 · 减蓝光 · 降对比
@@ -280,6 +284,38 @@
   /* 弹窗内提示需盖过弹窗层级 */
   body.modal-open .toast { z-index: 95; }
   body.reading-mode .toast { z-index: 60; }
+
+  /* ============ 选中浮动工具条 + 摘录面板（PLAN-D） ============ */
+  .sel-bar {
+    position: fixed; z-index: 120;
+    display: none; align-items: center; gap: 2px;
+    background: var(--surface-solid); color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+    padding: 4px;
+  }
+  .sel-bar.show { display: inline-flex; }
+  .sel-bar button {
+    border: none; background: transparent; color: var(--text);
+    font-size: 13px; padding: 7px 11px; border-radius: 8px; cursor: pointer; white-space: nowrap;
+  }
+  .sel-bar button:hover { background: var(--row-hover); }
+  /* 摘录面板条目 */
+  .ex-line { font-size: 11px; color: var(--hlx-mark); margin-right: 6px; font-weight: 600; }
+  .ex-note { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .ex-del {
+    position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+    border: none; background: transparent; color: var(--muted); cursor: pointer;
+    font-size: 13px; padding: 6px 8px; border-radius: 6px; opacity: 0;
+  }
+  .list-item:hover .ex-del { opacity: 1; }
+  .list-item { position: relative; }
+  .ex-item.dim { opacity: 0.55; }
+  .ex-file-head {
+    padding: 6px 10px 2px; font-size: 12px; color: var(--muted); font-weight: 600;
+    display: flex; justify-content: space-between; gap: 8px;
+  }
+  .ex-file-head .gone { color: #c05621; }
   @media (max-width: 640px) {
     .empty { padding: 14px; }
     .help-card { padding: 18px 16px; }
@@ -539,6 +575,15 @@
     box-shadow: inset 3px 0 0 0 var(--anc-mark);
   }
   #content .row.anchor .ln { color: var(--anc-mark); font-weight: 600; }
+  /* 摘录高亮（PLAN-D）：字符级 span 作「底色」，行号列变色作行级提示。
+     放在 .row.spk 之前 —— 三种行级标记同现时由后定义者接管视觉（朗读 > 选定 > 摘录行号色）。
+     与搜索 <mark class="kw"> 的层叠规则在 renderRowSegs 里处理：kw 挖走重叠区，摘录作底。 */
+  #content .hlx-ch {
+    background: var(--hlx-fill);
+    box-shadow: inset 0 -2px 0 0 var(--hlx-mark);
+    border-radius: 2px;
+  }
+  #content .row.hlx .ln { color: var(--hlx-mark); font-weight: 600; }
   /* 正在朗读的视觉行：整行底色 + 左侧竖条 + 行首 ▶ + 底部下划线。
      四重标记叠加，保证「念到哪一行」一眼可辨。
      用行级高亮而非字符级 mark，避免与搜索的 <mark class="kw"> 在同一行内互相嵌套、切碎 HTML。
@@ -738,6 +783,22 @@
             <div class="list" id="searchList"></div>
           </div>
         </section>
+
+        <section class="panel" id="excerptPanel">
+          <div class="panel-head">
+            <button class="chev" data-target="excerptPanel">▾</button>
+            <span>摘录</span>
+            <div class="panel-actions">
+              <button id="exCopyBtn" title="复制全部摘录为 Markdown（含 [[文件名]] 反链）">📋</button>
+              <button id="exExportBtn" title="导出全部摘录为 .md 文件（可直存 Obsidian vault）">⤓</button>
+              <button id="exClearBtn" title="清空当前文件的摘录">✕</button>
+            </div>
+            <span class="count" id="exCount">0</span>
+          </div>
+          <div class="panel-body">
+            <div class="list" id="exList"></div>
+          </div>
+        </section>
       </aside>
 
       <!-- 阅读列 -->
@@ -756,7 +817,7 @@
               <div class="help-header">
                 <div class="help-icon">📄</div>
                 <div class="help-title">TXT 阅读器</div>
-                <div class="help-version">v1.19</div>
+                <div class="help-version">v1.20</div>
               </div>
 
               <div class="help-section">
@@ -814,7 +875,7 @@
                 </ul>
               </div>
 
-              <div class="help-tip">提示：编码/字号下拉框聚焦时，PageUp / PageDown 不会触发翻页，避免误操作。朗读需系统已安装中文语音包，缺失时会明确提示并禁用按钮。朗读起点：点正文任意一行即可选定，未选定时从当前页第一行开始。</div>
+              <div class="help-tip">提示：编码/字号下拉框聚焦时，PageUp / PageDown 不会触发翻页，避免误操作。朗读需系统已安装中文语音包，缺失时会明确提示并禁用按钮。朗读起点：点正文任意一行即可选定，未选定时从当前页第一行开始。<b>摘录（PLAN-D）</b>：选中正文 → 浮动工具条「🖍 高亮 / 📝 摘录」→ 侧栏「摘录」面板管理；「📋 / ⤓」可把全部摘录导出为带 <code>[[文件名]]</code> 反链的 Markdown，直接投入知识库。摘录按文件内容指纹隔离，排版开关与重开文件都不会漂移。</div>
             </div>
           </div>
         </div>
@@ -924,6 +985,16 @@
     </div>
   </div>
 
+  <!-- toast 必须放在主脚本之前：脚本顶层就以 $('toast') 取引用，
+       元素若在脚本之后，引用会是 null，showToast 全部静默抛 TypeError（v1 起的隐性缺陷，2026-10-10 PLAN-D 开工时实测发现并修复） -->
+  <div class="toast" id="toast"></div>
+  <!-- 选中浮动工具条（PLAN-D）：选区出现时定位显示；mousedown 阻止默认以保住选区 -->
+  <div class="sel-bar" id="selBar">
+    <button id="selHlBtn" title="高亮并记入摘录">🖍 高亮</button>
+    <button id="selExBtn" title="记入摘录（可附备注）">📝 摘录</button>
+    <button id="selCopyBtn" title="复制选中文本">⧉</button>
+    <button id="selXBtn" title="取消">✕</button>
+  </div>
 <script>
 "use strict";
 (function () {
@@ -1272,6 +1343,7 @@
     // 若只给前缀，队列就只剩前缀（切排版 / 换文件都会走到这里）。
     if (!state.layoutDone && (Speak.isPlaying() || Speak.isPaused())) ensureAllLines();
     Speak.setLines(state.lines);   // 朗读队列与逻辑行保持同步（切排版 / 换文件都会经过这里）
+    Ex.onLinesChanged();           // 行集合重建 → 摘录按文本重定位（排版开关不漂移的关键）
   }
 
   function decodeAndRender() {
@@ -1423,6 +1495,7 @@
   function finishFill() {
     state.totalVisualRows = state.visualRows.length;
     state.linesTotalEst = state.lines.length;   // 估算转精确
+    Ex.onLinesChanged();                        // 全量行已就绪 → 解析前缀期未能定位的摘录（PLAN-D）
     applyLayoutMetrics();
     buildPages();
     drawRuler();
@@ -2446,6 +2519,44 @@
   })();
 
   let ticking = false;
+  // 摘录高亮（hlx-ch，底色）与当前搜索命中（mark.kw，置顶）的分层渲染（PLAN-D）：
+  // 先按摘录区间切段，再让 kw 从重叠区「挖走」中段 —— 重叠处只显示 mark，两侧保留摘录底色。
+  // 摘录区间是行内偏移（与 vr.start/end 同坐标系），不依赖排版后行号。
+  function renderRowSegs(vr, hl, hasKwRaw) {
+    let hasKw = hasKwRaw && currentMatchEnd > vr.start && currentMatchStart < vr.end;
+    const kwS = hasKw ? Math.max(vr.start, currentMatchStart) : 0;
+    const kwE = hasKw ? Math.min(vr.end, currentMatchEnd) : 0;
+    if (hasKw && kwE <= kwS) hasKw = false;
+    const segs = [];
+    if (hl) {
+      for (const r of hl) {
+        let s = Math.max(vr.start, r[0]), e = Math.min(vr.end, r[1]);
+        if (e <= s) continue;
+        if (hasKw && kwS < e && kwE > s) {
+          if (s < kwS) segs.push([s, kwS]);
+          if (e > kwE) segs.push([kwE, e]);
+        } else {
+          segs.push([s, e]);
+        }
+      }
+      segs.sort((a, b) => a[0] - b[0]);
+    }
+    let out = '', cur = vr.start;
+    const emitPlain = (to) => { if (to > cur) { out += escapeHtml(vr.text.slice(cur - vr.start, to - vr.start)); cur = to; } };
+    for (const sg of segs) {
+      emitPlain(sg[0]);
+      out += '<span class="hlx-ch">' + escapeHtml(vr.text.slice(sg[0] - vr.start, sg[1] - vr.start)) + '</span>';
+      cur = sg[1];
+    }
+    if (hasKw) {
+      emitPlain(kwS);
+      out += '<mark class="kw">' + escapeHtml(vr.text.slice(kwS - vr.start, kwE - vr.start)) + '</mark>';
+      cur = kwE;
+    }
+    emitPlain(vr.end);
+    return out;
+  }
+
   function render() {
     if (!state.totalVisualRows) { content.innerHTML = ''; updatePageInfo(); return; }
     const scrollTop = viewport.scrollTop;
@@ -2465,12 +2576,12 @@
     let html = '';
     for (let i = start; i <= end; i++) {
       const vr = state.visualRows[i];
-      const txHtml = (vr.lineIndex === currentMatchLine && currentMatchStart >= 0 && currentMatchEnd > currentMatchStart)
-        ? highlightVisualRow(vr, currentMatchStart, currentMatchEnd)
-        : escapeHtml(vr.text);
+      const hl = Ex.rowRanges(vr.lineIndex);   // 该逻辑行上的摘录区间（无则 null，快速路径零开销）
+      const isKw = vr.lineIndex === currentMatchLine && currentMatchStart >= 0 && currentMatchEnd > currentMatchStart;
+      const txHtml = (hl || isKw) ? renderRowSegs(vr, hl, isKw) : escapeHtml(vr.text);
       const isSpk = !!(spk && vr.lineIndex === spk.li && vr.end > spk.s && vr.start < spk.e);
       const isAnchor = anchor != null && vr.lineIndex === anchor;
-      html += '<div class="row' + (isSpk ? ' spk' : '') + (isAnchor ? ' anchor' : '')
+      html += '<div class="row' + (hl ? ' hlx' : '') + (isSpk ? ' spk' : '') + (isAnchor ? ' anchor' : '')
             + '" data-li="' + vr.lineIndex + '" data-vr="' + i + '"'
             + ' style="height:' + state.lineHeight + 'px">'
             + '<span class="ln" style="width:' + gw + '">' + (i + 1) + '</span>'
@@ -2765,6 +2876,8 @@
     invalidateDecode();                 // 正文已换 → 丢弃解码 / 排版结果缓存
     state.fileId = fileFingerprint(state.bytes);
     state.fileName = f.name; state.filePath = f.path;
+    Ex.onOpen();                        // 先换摘录上下文（按新文件指纹取组），行重建时 onLinesChanged 会完成解析，
+                                        // 这样 decodeAndRender 末尾那次 render 就能直接带出高亮（PLAN-D）
     state.detected = detectEncoding(state.bytes);
     state.enc = state.detected;
     encSelect.value = state.detected;
@@ -2842,6 +2955,7 @@
     updateRestoreBtn();   // 清空后无进度，禁用「恢复进度」按钮
     updateExportBtn();    // 无文件则禁用导出按钮
     updateSpeakUI();      // 无文件则禁用朗读入口
+    Ex.onClose();         // 清空摘录面板（摘录数据仍保留在 localStorage，重新打开同文件即回来）
   }
 
   /* ---------- 搜索定位 ---------- */
@@ -2851,6 +2965,286 @@
   let currentMatchStart = -1; // 当前高亮在逻辑行中的起始字符位置
   let currentMatchEnd = -1;     // 当前高亮在逻辑行中的结束字符位置（不含）
   let lastQuery = '';           // 上一次搜索词，避免重复重建列表导致索引被重置
+
+  /* ============================================================================
+   * 摘录模块（PLAN-2026-1001-D · 标注摘录与知识库导出）
+   * 数据模型：{ id, text, note, createdAt, li0 }（存 localStorage）
+   *   - text：捕获时的逻辑行文本快照（跨行以 \n 连接）—— 展示与导出都以它为准，
+   *     后续排版规则再怎么变都不影响内容（§5「原文快照」）；
+   *   - li0：捕获时的逻辑行号，仅作重定位时「选哪个重复命中」的提示，不作定位依据。
+   * 定位 = 文本重解析（在 state.lines 里找回摘录首段所在行，选距 li0 最近者）：
+   *   排版开关 / 重开文件 / 分片补齐后行号漂移都不影响 —— 满足验收
+   *   「关闭排版 / 重新打开文件后摘录定位不漂移」与 §5「不依赖排版后行号」。
+   * 存储：'txtreader-excerpts-v1'，key 与进度 key 同构（路径|文件名|内容指纹）——
+   *   同内容不同文件不串档（§5）；与进度分属两个命名空间，互不淘汰。
+   * 高亮：resolveAll() 把每条摘录解析成逐行区间表 hlMap（li -> [s,e) 行内偏移），
+   *   render() 按 vr 查表走 renderRowSegs 分层渲染。
+   * ==========================================================================*/
+  const Ex = (() => {
+    const EX_STORE_KEY = 'txtreader-excerpts-v1';
+    const RESOLVE_SIG = () => state.lines.length + '|' + state.layoutDone + '|' + decodeVersion;
+    let store = {};               // key -> { name, path, entries: [] }
+    let curKey = null;
+    let curEntries = null;
+    let hlMap = new Map();        // li -> [[s,e), ...]（行内偏移，升序）
+    let lastSig = '';             // 上次解析时的行状态签名（幂等，避免搜索等高频路径重复全量扫描）
+    let seq = 0;
+
+    function keyOf(name, path, fileId) { return (path || name) + '|' + name + '|' + (fileId || ''); }
+    function currentKey() {
+      if (!state.fileName) return null;
+      const id = state.fileId || (state.bytes ? fileFingerprint(state.bytes) : '');
+      return keyOf(state.fileName, state.filePath, id);
+    }
+    function loadStore() {
+      try {
+        store = JSON.parse(localStorage.getItem(EX_STORE_KEY) || '{}');
+        if (!store || typeof store !== 'object' || Array.isArray(store)) store = {};
+      } catch (e) { store = {}; }
+    }
+    function saveStore() {
+      try { localStorage.setItem(EX_STORE_KEY, JSON.stringify(store)); return true; }
+      catch (e) { showToast('摘录保存失败：浏览器存储已满 —— 请先导出并清理旧摘录'); return false; }
+    }
+
+    /* ---------- 定位（文本重解析） ---------- */
+    // 找出所有包含 part 的行，取距 hint 最近者（同句在文中重复出现时回到原文附近）
+    function findLineContaining(part, hint) {
+      let best = -1, bestDist = Infinity;
+      for (let i = 0; i < state.lines.length; i++) {
+        if ((state.lines[i] || '').indexOf(part) >= 0) {
+          const d = Math.abs(i - (hint || 0));
+          if (d < bestDist) { bestDist = d; best = i; if (d === 0) break; }
+        }
+      }
+      return best;
+    }
+    function resolveAll() {
+      const sig = RESOLVE_SIG();
+      if (sig === lastSig) return;              // 行没变（搜索/朗读触发的高频路径）直接复用
+      lastSig = sig;
+      hlMap = new Map();
+      if (!curEntries || !state.lines.length) return;
+      for (const en of curEntries) {
+        en._li = -1; en._s = -1; en._liEnd = -1; en._e = -1;
+        const parts = String(en.text || '').split('\n');
+        if (!parts.length || !parts[0]) continue;
+        const startLi = findLineContaining(parts[0].slice(0, 80), en.li0 || 0);
+        if (startLi < 0) continue;
+        const startLine = state.lines[startLi] || '';
+        const s = startLine.indexOf(parts[0]);
+        if (s < 0) continue;                    // 理论不可达（findLineContaining 已保证）
+        // 跨行：逐段向后校验（中段一般与整行相等；末段是该行的前缀）
+        let li = startLi, ok = true;
+        for (let k = 1; k < parts.length; k++) {
+          const next = state.lines[li + 1] || '';
+          if (parts[k] === '' ? next === '' : next.indexOf(parts[k]) >= 0) { li++; }
+          else { ok = false; break; }
+        }
+        if (!ok) continue;
+        en._li = startLi; en._s = s; en._liEnd = li;
+        en._e = (li === startLi) ? s + parts[0].length : parts[parts.length - 1].length;
+      }
+      for (const en of curEntries) {
+        if (en._li < 0) continue;
+        for (let li = en._li; li <= en._liEnd; li++) {
+          const lineLen = (state.lines[li] || '').length;
+          const s = (li === en._li) ? en._s : 0;
+          const e = (li === en._liEnd) ? Math.min(en._e, lineLen) : lineLen;
+          if (e <= s) continue;
+          if (!hlMap.has(li)) hlMap.set(li, []);
+          hlMap.get(li).push([s, e]);
+        }
+      }
+      for (const arr of hlMap.values()) arr.sort((a, b) => a[0] - b[0]);
+    }
+
+    /* ---------- 增删 ---------- */
+    // ranges: [{ li, s, e }]（按逻辑行升序、行内偏移），来自选区捕获
+    function addFromSelection(ranges, note) {
+      if (!curEntries || !ranges || !ranges.length || !state.lines.length) return null;
+      const parts = ranges.map((r) => (state.lines[r.li] || '').slice(r.s, r.e));
+      const text = parts.join('\n');
+      if (!text.trim()) return null;
+      const en = {
+        id: Date.now().toString(36) + '-' + (++seq),
+        text: text, note: (note || '').trim(),
+        createdAt: Date.now(), li0: ranges[0].li,
+      };
+      curEntries.push(en);
+      if (!saveStore()) { curEntries.pop(); return null; }
+      lastSig = ''; resolveAll(); renderPanel(); render();
+      return en;
+    }
+    function remove(id) {
+      if (!curEntries) return;
+      const i = curEntries.findIndex((x) => x.id === id);
+      if (i < 0) return;
+      const removed = curEntries.splice(i, 1)[0];
+      if (!saveStore()) { curEntries.splice(i, 0, removed); return; }
+      lastSig = ''; resolveAll(); renderPanel(); render();
+    }
+    function clearCurrent() {
+      if (!curEntries || !curEntries.length) return;
+      const backup = curEntries.splice(0, curEntries.length);
+      if (!saveStore()) { curEntries.push.apply(curEntries, backup); return; }
+      lastSig = ''; hlMap = new Map(); renderPanel(); render();
+    }
+
+    /* ---------- 跳转 ---------- */
+    function jump(id) {
+      const en = curEntries && curEntries.find((x) => x.id === id);
+      if (!en) return false;
+      if (en._li < 0) { ensureAllLines(); lastSig = ''; resolveAll(); }
+      if (en._li < 0) { showToast('未能在正文中定位该摘录（正文内容可能已变化）'); return false; }
+      ensureRowsUpTo(en._li);
+      const vr = state.lineFirstVisualRow[en._li];
+      if (!(vr >= 0)) return false;
+      viewport.scrollTop = Math.max(0, vr * state.lineHeight - 80);
+      return true;
+    }
+
+    /* ---------- 导出 ---------- */
+    function fmtTime(t) {
+      const d = new Date(t);
+      const p = (x) => String(x).padStart(2, '0');
+      return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+    }
+    function totalEntries() {
+      let n = 0;
+      for (const k of Object.keys(store)) { const g = store[k]; if (g && g.entries) n += g.entries.length; }
+      return n;
+    }
+    // Markdown 导出：> 引用 + [[文件名]] 反链（Obsidian 直接识别；反链写裸 basename，
+    // 与库内「[[中文名]] 不含路径」的互链惯例一致）
+    function buildMarkdown() {
+      const keys = Object.keys(store).filter((k) => store[k] && store[k].entries && store[k].entries.length);
+      if (!keys.length) return null;
+      const d = new Date();
+      const ymd = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      let total = 0; keys.forEach((k) => { total += store[k].entries.length; });
+      let md = '# 摘录 · ' + (curEntries && curEntries.length ? state.fileName : (store[keys[0]].name || 'excerpts')) + '\n\n'
+        + '> 摘录自 TXT 阅读器 · 导出于 ' + ymd + ' · 共 ' + total + ' 条\n'
+        + '> 反链：' + keys.map((k) => '[[' + String(store[k].name || '').replace(/\.txt$/i, '') + ']]').join(' · ') + '\n\n';
+      for (const k of keys) {
+        const g = store[k];
+        md += '## ' + (g.name || k) + '\n\n';
+        const es = g.entries.slice();
+        if (k === curKey) es.sort((a, b) => (a._li < 0 ? 1e9 : a._li) - (b._li < 0 ? 1e9 : b._li) || (a.createdAt - b.createdAt));
+        else es.sort((a, b) => (a.li0 || 0) - (b.li0 || 0) || (a.createdAt - b.createdAt));
+        for (const en of es) {
+          const liNo = (en._li >= 0 ? en._li : (en.li0 || 0)) + 1;
+          md += '### L' + liNo + ' · ' + fmtTime(en.createdAt) + '\n\n'
+            + en.text.split('\n').map((x) => '> ' + x).join('\n') + '\n';
+          if (en.note) md += '\n备注：' + en.note + '\n';
+          md += '\n';
+        }
+      }
+      return md;
+    }
+    function legacyCopy(text, done) {
+      const ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); done(); } catch (e) { showToast('复制失败，请改用「⤓ 导出」'); }
+      document.body.removeChild(ta);
+    }
+    function copyAll() {
+      const md = buildMarkdown();
+      if (!md) { showToast('暂无摘录可复制'); return; }
+      const n = totalEntries();
+      const done = () => showToast('已复制 ' + n + ' 条摘录的 Markdown');
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(md).then(done, () => legacyCopy(md, done));
+      else legacyCopy(md, done);
+    }
+    async function exportFile() {
+      const md = buildMarkdown();
+      if (!md) { showToast('暂无摘录可导出'); return; }
+      const base = String((curEntries && curEntries.length && state.fileName) || 'excerpts').replace(/\.txt$/i, '');
+      const name = '摘录-' + base + '-' + new Date().toISOString().slice(0, 10) + '.md';
+      if (isFsaActive()) {
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: name,
+            types: [{ description: 'Markdown 文件', accept: { 'text/markdown': ['.md'] } }],
+          });
+          const w = await handle.createWritable();
+          await w.write(md); await w.close();
+          showToast('已保存：' + (handle.name || name));
+          return;
+        } catch (err) {
+          if (err && err.name === 'AbortError') return;   // 用户取消
+          // FSA 中途失败 → 降级下载，内容不丢
+        }
+      }
+      downloadText(md, name);
+    }
+
+    /* ---------- 面板 ---------- */
+    function fileGone(key) {
+      return !project.files.some((f) => keyOf(f.name, f.path, fileFingerprint(f.bytes)) === key);
+    }
+    function renderPanel() {
+      const listEl = document.getElementById('exList');
+      const cnt = document.getElementById('exCount');
+      if (!listEl) return;
+      const keys = Object.keys(store).filter((k) => store[k] && store[k].entries && store[k].entries.length);
+      cnt.textContent = String(totalEntries());
+      listEl.innerHTML = '';
+      if (!keys.length) { listEl.innerHTML = '<div class="empty-list">选中正文即可高亮摘录</div>'; return; }
+      keys.sort((a, b) => (a === curKey ? -1 : b === curKey ? 1 : String(store[a].name || '').localeCompare(String(store[b].name || ''))));
+      for (const k of keys) {
+        const g = store[k];
+        const gone = k !== curKey && fileGone(k);
+        const head = document.createElement('div');
+        head.className = 'ex-file-head';
+        head.innerHTML = '<span>' + escapeHtml(g.name || '(未知文件)') + (k === curKey ? ' · 当前' : (gone ? ' · <span class="gone">文件已移除，可导出不可跳转</span>' : '')) + '</span><span>' + g.entries.length + '</span>';
+        listEl.appendChild(head);
+        const es = g.entries.slice();
+        if (k === curKey) es.sort((a, b) => (a._li < 0 ? 1e9 : a._li) - (b._li < 0 ? 1e9 : b._li) || (a.createdAt - b.createdAt));
+        else es.sort((a, b) => (a.li0 || 0) - (b.li0 || 0) || (a.createdAt - b.createdAt));
+        for (const en of es) {
+          const item = document.createElement('div');
+          item.className = 'list-item ex-item' + (k === curKey ? '' : ' dim');
+          const preview = String(en.text || '').split('\n')[0];
+          const liNo = (en._li >= 0 ? en._li : (en.li0 || 0)) + 1;
+          item.innerHTML = '<div><span class="ex-line">L' + liNo + '</span><span class="li-name">'
+            + escapeHtml(preview.length > 42 ? preview.slice(0, 42) + '…' : preview) + '</span></div>'
+            + (en.note ? '<div class="ex-note">📝 ' + escapeHtml(en.note) + '</div>' : '')
+            + '<button class="ex-del" title="删除该摘录">✕</button>';
+          item.addEventListener('click', (ev) => {
+            if (ev.target.closest && ev.target.closest('.ex-del')) { remove(en.id); return; }
+            if (k !== curKey) { showToast('打开「' + (g.name || '') + '」后可跳转'); return; }
+            jump(en.id);
+          });
+          listEl.appendChild(item);
+        }
+      }
+    }
+
+    /* ---------- 生命周期钩子 ---------- */
+    function onOpen() {
+      loadStore();
+      curKey = currentKey();
+      if (!curKey) { curEntries = null; hlMap = new Map(); lastSig = ''; renderPanel(); return; }
+      if (!store[curKey]) store[curKey] = { name: state.fileName, path: state.filePath || state.fileName, entries: [] };
+      else if (!store[curKey].entries) store[curKey].entries = [];
+      curEntries = store[curKey].entries;
+      lastSig = ''; resolveAll(); renderPanel();
+    }
+    function onClose() { curKey = null; curEntries = null; hlMap = new Map(); lastSig = ''; renderPanel(); }
+    // 排版开关 / 分片补齐完成后行集合变了 → 重新定位（幂等；render 由调用方的既有流程带出）
+    function onLinesChanged() {
+      if (!curEntries) return;
+      lastSig = ''; resolveAll(); renderPanel();
+    }
+
+    return {
+      onOpen, onClose, onLinesChanged, addFromSelection, remove, clearCurrent,
+      copyAll, exportFile, jump,
+      rowRanges: (li) => hlMap.get(li) || null,
+      count: () => (curEntries ? curEntries.length : 0),
+    };
+  })();
 
   /* ---------- 通配符匹配引擎 ---------- */
   // '*' 匹配零个或多个任意字符（惰性，取最短命中）；'?' 匹配恰好一个任意字符；
@@ -2870,18 +3264,9 @@
     const m = re.exec(text);
     return m ? { index: m.index, length: m[0].length } : null;
   }
-  // 在单个视觉行中精确高亮与命中范围 [matchStart, matchEnd) 重叠的部分
-  function highlightVisualRow(vr, matchStart, matchEnd) {
-    if (matchStart < 0 || matchEnd <= matchStart) return escapeHtml(vr.text);
-    if (matchEnd <= vr.start || matchStart >= vr.end) return escapeHtml(vr.text);
-    const overlapStart = Math.max(vr.start, matchStart);
-    const overlapEnd = Math.min(vr.end, matchEnd);
-    const relStart = overlapStart - vr.start;
-    const relEnd = overlapEnd - vr.start;
-    return escapeHtml(vr.text.slice(0, relStart))
-         + '<mark class="kw">' + escapeHtml(vr.text.slice(relStart, relEnd)) + '</mark>'
-         + escapeHtml(vr.text.slice(relEnd));
-  }
+  // 在单个视觉行中精确高亮与命中范围 [matchStart, matchEnd) 重叠的部分。
+  // （v1.20 起该职责由 renderRowSegs 统一承担 —— 摘录区间与搜索命中在同一个分段器里
+  // 分层合成；此函数已无调用方，保留会引起「两套高亮逻辑」的误导，故删除。）
   function updateMatchInfo() {
     if (!matchInfo) return;
     const cur = currentMatchIndex >= 0 ? (currentMatchIndex + 1) : 0;
@@ -3212,6 +3597,131 @@
       const panel = document.getElementById(btn.dataset.target);
       if (panel) panel.classList.toggle('collapsed');
     });
+  });
+
+  /* ---------- 选中正文 → 浮动工具条 → 摘录（PLAN-D） ---------- */
+  const selBar = $('selBar');
+  let selRanges = null;      // 最近一次有效选区：[{ li, s, e }]（逻辑行号 + 行内偏移，升序）
+  let selCheckTimer = null;
+
+  // 选区边界在 .tx 内的字符偏移：从 .tx 内容起点到该边界点的可见字符数。
+  // .tx 的 textContent 与 vr.text 严格相等（高亮 span 只是包一层），所以字符数即偏移。
+  function offsetInEl(el, node, off) {
+    try {
+      const r = document.createRange();
+      r.selectNodeContents(el);
+      r.setEnd(node, off);
+      return r.toString().length;
+    } catch (e) { return -1; }   // 边界不在 el 内（如选区从行号列起）→ 由调用方钳到 0
+  }
+  function captureSelection() {
+    selRanges = null;
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount || !state.bytes) return false;
+    const range = sel.getRangeAt(0);
+    const hit = [];
+    for (const row of content.querySelectorAll('.row')) {
+      if (range.intersectsNode(row)) hit.push(row);
+    }
+    if (!hit.length) return false;
+    // 同一逻辑行被折成多个视觉行、或选区在行内往复 → 按行归并取 [min, max)
+    const byLine = new Map();
+    for (let i = 0; i < hit.length; i++) {
+      const row = hit[i];
+      const vr = state.visualRows[+row.dataset.vr];
+      if (!vr) continue;
+      const tx = row.querySelector('.tx');
+      let s = 0, e = tx.textContent.length;
+      if (i === 0) { const v = offsetInEl(tx, range.startContainer, range.startOffset); if (v > 0) s = v; }
+      if (i === hit.length - 1) { const v = offsetInEl(tx, range.endContainer, range.endOffset); if (v >= 0 && v <= e) e = v; }
+      if (e <= s) continue;
+      const ls = vr.start + s, le = vr.start + e;
+      if (byLine.has(vr.lineIndex)) {
+        const cur = byLine.get(vr.lineIndex);
+        cur[0] = Math.min(cur[0], ls); cur[1] = Math.max(cur[1], le);
+      } else {
+        byLine.set(vr.lineIndex, [ls, le]);
+      }
+    }
+    const ranges = [];
+    for (const li of Array.from(byLine.keys()).sort((a, b) => a - b)) {
+      const r = byLine.get(li);
+      if (r[1] > r[0]) ranges.push({ li: li, s: r[0], e: r[1] });
+    }
+    if (!ranges.length) return false;
+    selRanges = ranges;
+    return true;
+  }
+  function showSelBar() {
+    if (!captureSelection()) { hideSelBar(); return; }
+    const sel = window.getSelection();
+    let rect = null;
+    try { rect = sel.getRangeAt(0).getBoundingClientRect(); } catch (e) {}
+    if (!rect || (!rect.width && !rect.height)) { hideSelBar(); return; }
+    selBar.classList.add('show');
+    const bw = selBar.offsetWidth || 200, bh = selBar.offsetHeight || 40;
+    let x = rect.left + rect.width / 2 - bw / 2;
+    let y = rect.top - bh - 8;
+    if (y < 8) y = rect.bottom + 8;
+    if (y + bh > window.innerHeight - 8) y = Math.max(8, window.innerHeight - bh - 8);
+    x = Math.max(8, Math.min(x, window.innerWidth - bw - 8));
+    selBar.style.left = x + 'px';
+    selBar.style.top = y + 'px';
+  }
+  function hideSelBar() {
+    selBar.classList.remove('show');
+    selRanges = null;
+  }
+  // selectionchange 统一驱动（桌面拖选与移动端长按都走这里）；scroll 后行会重绘，选区失效即收条
+  document.addEventListener('selectionchange', () => {
+    clearTimeout(selCheckTimer);
+    selCheckTimer = setTimeout(() => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.rangeCount) { hideSelBar(); return; }
+      const n = sel.anchorNode;
+      const host = n && (n.nodeType === 1 ? n : n.parentNode);
+      if (!host || !content.contains(host)) { hideSelBar(); return; }
+      showSelBar();
+    }, 320);
+  });
+  viewport.addEventListener('scroll', hideSelBar, { passive: true });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') hideSelBar(); });
+  selBar.addEventListener('mousedown', (e) => e.preventDefault());   // 保住选区不被点按钮清掉
+  $('selHlBtn').addEventListener('click', () => {
+    if (!selRanges) return;
+    const en = Ex.addFromSelection(selRanges, '');
+    hideSelBar();
+    window.getSelection().removeAllRanges();
+    showToast(en ? '已高亮并记入摘录' : '摘录失败');
+  });
+  $('selExBtn').addEventListener('click', () => {
+    if (!selRanges) return;
+    const note = window.prompt('备注（可留空，随摘录一起导出）：', '');
+    if (note === null) return;                       // 取消
+    const en = Ex.addFromSelection(selRanges, note);
+    hideSelBar();
+    window.getSelection().removeAllRanges();
+    if (en) showToast('已记入摘录' + (en.note ? '（含备注）' : ''));
+  });
+  $('selCopyBtn').addEventListener('click', () => {
+    if (!selRanges) return;
+    const text = selRanges.map((r) => (state.lines[r.li] || '').slice(r.s, r.e)).join('\n');
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => showToast('已复制选中文本'));
+    else showToast('复制失败');
+    hideSelBar();
+  });
+  $('selXBtn').addEventListener('click', () => { hideSelBar(); window.getSelection().removeAllRanges(); });
+
+  /* ---------- 摘录面板按钮（PLAN-D） ---------- */
+  $('exCopyBtn').addEventListener('click', () => Ex.copyAll());
+  $('exExportBtn').addEventListener('click', () => Ex.exportFile());
+  $('exClearBtn').addEventListener('click', () => {
+    const n = Ex.count();
+    if (!n) { showToast('当前文件没有摘录'); return; }
+    if (window.confirm('清空当前文件的全部 ' + n + ' 条摘录？\n\n· 后果：这些摘录将从本机存储中删除\n· 撤回：不可撤回（建议先导出）\n· 替代：点【取消】保留')) {
+      Ex.clearCurrent();
+      showToast('已清空当前文件的摘录');
+    }
   });
 
   fileSearch.addEventListener('input', () => buildFileList(fileSearch.value));
@@ -3593,6 +4103,5 @@
   buildFileList('');
 })();
 </script>
-  <div class="toast" id="toast"></div>
 </body>
 </html>
