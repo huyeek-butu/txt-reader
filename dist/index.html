@@ -817,7 +817,7 @@
               <div class="help-header">
                 <div class="help-icon">📄</div>
                 <div class="help-title">TXT 阅读器</div>
-                <div class="help-version">v1.20</div>
+                <div class="help-version">v1.21</div>
               </div>
 
               <div class="help-section">
@@ -3028,22 +3028,26 @@
       for (const en of curEntries) {
         en._li = -1; en._s = -1; en._liEnd = -1; en._e = -1;
         const parts = String(en.text || '').split('\n');
-        if (!parts.length || !parts[0]) continue;
-        const startLi = findLineContaining(parts[0].slice(0, 80), en.li0 || 0);
+        // 掐掉首尾空段（选区起止恰好落在空行上的边缘形态）：定位从首个非空段起算
+        let k0 = 0, k1 = parts.length - 1;
+        while (k0 <= k1 && !parts[k0]) k0++;
+        while (k1 >= k0 && !parts[k1]) k1--;
+        if (k0 > k1) continue;
+        const startLi = findLineContaining(parts[k0].slice(0, 80), en.li0 || 0);
         if (startLi < 0) continue;
         const startLine = state.lines[startLi] || '';
-        const s = startLine.indexOf(parts[0]);
+        const s = startLine.indexOf(parts[k0]);
         if (s < 0) continue;                    // 理论不可达（findLineContaining 已保证）
-        // 跨行：逐段向后校验（中段一般与整行相等；末段是该行的前缀）
+        // 跨行：逐段向后校验（中段一般与整行相等；末段是该行的前缀；'' 段必须落在真实空行上）
         let li = startLi, ok = true;
-        for (let k = 1; k < parts.length; k++) {
+        for (let k = k0 + 1; k <= k1; k++) {
           const next = state.lines[li + 1] || '';
           if (parts[k] === '' ? next === '' : next.indexOf(parts[k]) >= 0) { li++; }
           else { ok = false; break; }
         }
         if (!ok) continue;
         en._li = startLi; en._s = s; en._liEnd = li;
-        en._e = (li === startLi) ? s + parts[0].length : parts[parts.length - 1].length;
+        en._e = (li === startLi) ? s + parts[k0].length : parts[k1].length;
       }
       for (const en of curEntries) {
         if (en._li < 0) continue;
@@ -3634,7 +3638,12 @@
       let s = 0, e = tx.textContent.length;
       if (i === 0) { const v = offsetInEl(tx, range.startContainer, range.startOffset); if (v > 0) s = v; }
       if (i === hit.length - 1) { const v = offsetInEl(tx, range.endContainer, range.endOffset); if (v >= 0 && v <= e) e = v; }
-      if (e <= s) continue;
+      if (e <= s) {
+        // 空行占位（v1.21）：被选区覆盖的空行也必须进 byLine（[0,0)），快照才能保住
+        // '\n\n'，resolveAll 逐行反查才不会在真实空行处断链。非空行的退化区间照旧丢弃。
+        if (tx.textContent === '') byLine.set(vr.lineIndex, [0, 0]);
+        continue;
+      }
       const ls = vr.start + s, le = vr.start + e;
       if (byLine.has(vr.lineIndex)) {
         const cur = byLine.get(vr.lineIndex);
@@ -3644,11 +3653,23 @@
       }
     }
     const ranges = [];
-    for (const li of Array.from(byLine.keys()).sort((a, b) => a - b)) {
+    const liKeys = Array.from(byLine.keys()).sort((a, b) => a - b);
+    for (let idx = 0; idx < liKeys.length; idx++) {
+      const li = liKeys[idx];
       const r = byLine.get(li);
       if (r[1] > r[0]) ranges.push({ li: li, s: r[0], e: r[1] });
+      // 空行占位（v1.21）：跨空行选区的文本快照必须保住连续换行，否则 resolveAll
+      // 逐行反查走到真实空行处断链、高亮定位失败。先占住 liKeys，下面的缺口补齐才不会重复补。
+      else if ((state.lines[li] || '') === '') ranges.push({ li: li, s: 0, e: 0 });
+      // 首末命中行之间的逻辑行被连续 DOM 选区完整覆盖（含未入 hit 的空行）→ 整行补齐，
+      // 防止个别行 intersectsNode 漏判时快照缺行、反查同样断链
+      if (idx + 1 < liKeys.length) {
+        for (let g = li + 1; g < liKeys[idx + 1]; g++) {
+          ranges.push({ li: g, s: 0, e: (state.lines[g] || '').length });
+        }
+      }
     }
-    if (!ranges.length) return false;
+    if (!ranges.some((x) => x.e > x.s)) return false;   // 纯空行选区无意义，维持旧行为（不出工具条）
     selRanges = ranges;
     return true;
   }
