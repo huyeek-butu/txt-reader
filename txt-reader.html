@@ -443,6 +443,35 @@
     .search-btn { min-width: 44px; min-height: 44px; }
   }
 
+  /* 横屏 / 矮视口紧凑模式：把纵向空间尽量让给正文（PLAN-C §7.1 遗留项「手机横屏正文仅 53px」）。
+     812×375 实测（v1.18）各段占位：padding 32 + gap 42 + 顶栏 94 + 标尺 44 + 翻页栏 62
+     + 状态栏 46 = 320px，正文仅得 53px，约 1.5 行。
+     逐段压缩，但**不动任何触摸目标尺寸**（标尺 44px、按钮 44px 是 PLAN-C 验收判据，
+     横屏下一样要满足），因此省下来的空间只能来自「留白」与「顶栏的行数」：
+       ① padding 16→8、gap 14→8（省 34）
+       ② 顶栏由「换行堆叠」改为「单行 + 横向滚动」——实测其内容高 184px（约 3 行），
+          单行后固定为一行按钮高（省约 34）；控件一个不丢，靠横向滑动可达，
+          与既有「超出部分各自内部滚动」的处置一致。
+       ③ 状态栏字号与内边距收紧（46 → 约 23）。
+     判据只挂**高度**（沿用本条既有原则：约束不挂宽度，否则横屏永远兜不住）：
+     横屏手机视高 375 / 390 / 414 / 430 全部命中；平板横屏 768 高与桌面常规窗口
+     （≥600 高）不命中，完全不受影响。 */
+  @media (max-height: 480px) {
+    .app { padding: 8px; gap: 8px; }
+    .topbar {
+      max-height: none; flex-wrap: nowrap;
+      overflow-x: auto; overflow-y: hidden;
+      padding: 8px 10px; gap: 8px 10px;
+    }
+    /* nowrap 下必须逐项锁住不收缩，否则控件会被压扁而不是触发横向滚动。 */
+    .topbar > *, .topbar .ctrl { flex: 0 0 auto; }
+    /* brand 的 margin-right:auto 在单行且空间不足时无意义，去掉避免留出空档。 */
+    .topbar .brand { margin-right: 0; }
+    .topbar::-webkit-scrollbar { height: 6px; }
+    .topbar::-webkit-scrollbar-thumb { background: var(--glow); border-radius: 6px; }
+    .statusbar { padding: 4px 10px; font-size: 10.5px; gap: 4px 10px; }
+  }
+
   /* ============ 纯净阅读模式 ============ */
   .read-bar {
     position: fixed; top: 14px; left: 50%; transform: translateX(-50%) translateY(-14px);
@@ -727,7 +756,7 @@
               <div class="help-header">
                 <div class="help-icon">📄</div>
                 <div class="help-title">TXT 阅读器</div>
-                <div class="help-version">v1.18</div>
+                <div class="help-version">v1.19</div>
               </div>
 
               <div class="help-section">

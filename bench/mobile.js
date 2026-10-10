@@ -53,22 +53,36 @@ const MEASURE = `(() => {
                        dpr: window.devicePixelRatio, screenW: window.screen.width,
                        visualW: window.visualViewport ? Math.round(window.visualViewport.width) : null,
                        scrollW: document.documentElement.scrollWidth },
-                targets: {}, sidebar: {}, ruler: {}, overflow: [] };
-  // 横向溢出诊断：找出把文档撑得比设备视口宽的元素。
-  // scrollWidth > clientWidth 时，移动端 window.innerWidth 会报「内容宽」而不是设备宽，
-  // 这正是此处 506 的来历 —— 不是仿真失效，是真的有元素溢出。
+                targets: {}, sidebar: {}, ruler: {}, overflow: [], docOverflow: null };
+  // 横向溢出诊断（两级判定）：
+  //   ① 文档级：documentElement.scrollWidth > clientWidth —— 这才是真溢出，
+  //      症状是整页左右晃、移动端 window.innerWidth 报「内容宽」而不是设备宽
+  //      （此处 506 的由来：不是仿真失效，是真的有元素把文档撑宽了）。
+  //   ② 元素级：**只**在①成立时才逐个找元凶。元素的 right 超出视口宽本身不是缺陷 ——
+  //      它可能正待在某个**横向滚动容器内部**（如矮视口紧凑模式下的顶栏 nowrap +
+  //      overflow-x:auto），那正是预期布局。
+  //      早期只做②不做①，会把顶栏的滚动内容误报成「横向溢出元素」，看起来像回归。
   {
     const vw = document.documentElement.clientWidth;
-    for (const el of document.querySelectorAll('body *')) {
-      const r = el.getBoundingClientRect();
-      if (r.width <= 0) continue;
-      if (r.right > vw + 1 || r.width > vw + 1) {
-        out.overflow.push(el.tagName + (el.id ? '#' + el.id : '') +
-          (el.className ? '.' + String(el.className).split(' ').filter(Boolean)[0] : '') +
-          ' w=' + Math.round(r.width) + ' right=' + Math.round(r.right));
-        if (out.overflow.length >= 12) break;
+    out.docOverflow = document.documentElement.scrollWidth > vw + 1;
+    if (out.docOverflow) {
+      for (const el of document.querySelectorAll('body *')) {
+        const r = el.getBoundingClientRect();
+        if (r.width <= 0) continue;
+        if (r.right > vw + 1 || r.width > vw + 1) {
+          out.overflow.push(el.tagName + (el.id ? '#' + el.id : '') +
+            (el.className ? '.' + String(el.className).split(' ').filter(Boolean)[0] : '') +
+            ' w=' + Math.round(r.width) + ' right=' + Math.round(r.right));
+          if (out.overflow.length >= 12) break;
+        }
       }
     }
+  }
+  // 顶栏自身是否处于横向滚动状态（紧凑模式下为预期；桌面一行放得下时 scrollW == clientW）
+  {
+    const tb = document.querySelector('.topbar');
+    out.topbarScroll = tb ? { scrollW: tb.scrollWidth, clientW: tb.clientWidth,
+                              scrollable: tb.scrollWidth > tb.clientWidth + 1 } : null;
   }
   // 纵向空间分配：正文视口占视口高度的比例，是 PLAN-C 阶段三的硬指标。
   // .app 是固定高度的 flex 列、正文 min-height:0，顶栏/翻页栏一旦 wrap 失控就会
@@ -305,11 +319,14 @@ function print(report) {
       if (c.env) console.log('  [env] innerWidth=' + c.env.inner + ' clientWidth=' + c.env.client +
         ' dpr=' + c.env.dpr + ' screen.width=' + c.env.screenW + ' visualViewport=' + c.env.visualW +
         ' scrollWidth=' + c.env.scrollW);
-      if (c.overflow && c.overflow.length) {
-        console.log('  [横向溢出元素] ' + c.overflow.join('  |  '));
+      if (c.docOverflow) {
+        console.log('  [横向溢出] 文档级溢出（scrollWidth > clientWidth）');
+        if (c.overflow && c.overflow.length) console.log('    [元凶] ' + c.overflow.join('  |  '));
       } else {
-        console.log('  [横向溢出元素] 无');
+        console.log('  [横向溢出] 无（文档级 scrollWidth ≤ clientWidth）');
       }
+      if (c.topbarScroll) console.log('  [顶栏] scrollW=' + c.topbarScroll.scrollW +
+        ' clientW=' + c.topbarScroll.clientW + (c.topbarScroll.scrollable ? '（横向可滚动）' : '（单屏放得下）'));
       console.log('  --- 纵向空间分配（判据：正文必须可用，不得为 0）---');
       if (c.chrome) console.log('    视口高 ' + c.chrome.viewportH + 'px  顶栏 ' + c.chrome.topbarH + 'px (' +
         c.chrome.topbarShare + ')  翻页栏 ' + c.chrome.pagebarH + 'px  正文 ' + c.chrome.readerH +
