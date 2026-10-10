@@ -150,7 +150,7 @@
   .panel-body { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
   .panel.collapsed .panel-body { display: none; }
   .panel.collapsed .chev { transform: rotate(-90deg); }
-  /* 面板独占（v1.22）：单击标题栏 → 该栏铺满其余空间、其余栏最小化为标题条；再次双击（同栏 400ms 内两击）还原 */
+  /* 面板独占（v1.23）：单击标题栏 → 该栏铺满其余空间、其余栏最小化为标题条；再单击该栏标题栏还原 */
   .sidebar.solo-mode .panel { flex: 0 0 auto; }
   .sidebar.solo-mode .panel:not(.soloed) .panel-body { display: none; }
   .sidebar.solo-mode .panel:not(.soloed) .chev { transform: rotate(-90deg); }
@@ -822,7 +822,7 @@
               <div class="help-header">
                 <div class="help-icon">📄</div>
                 <div class="help-title">TXT 阅读器</div>
-                <div class="help-version">v1.22</div>
+                <div class="help-version">v1.23</div>
               </div>
 
               <div class="help-section">
@@ -845,7 +845,7 @@
                   <li><strong>纯净阅读模式</strong>：一键隐藏 UI，自定义字号、字体、宽度与背景色。</li>
                   <li><strong>护眼主题</strong>：明亮暖纸感 / 暗色非纯黑柔对比，明暗一键切换，跟随系统。</li>
                   <li><strong>自动翻页</strong>：可设定 15–90 秒/页，空格启停。</li>
-                  <li><strong>侧栏面板独占</strong>：单击任一面板标题栏（文件列表 / 搜索定位 / 摘录），该栏铺满侧栏其余空间、其余栏收成标题条；再次双击同一标题栏还原三栏。</li>
+                  <li><strong>侧栏面板独占</strong>：单击任一面板标题栏（文件列表 / 搜索定位 / 摘录），该栏铺满侧栏其余空间、其余栏收成标题条；再单击该栏标题栏还原三栏。</li>
                 </ul>
               </div>
 
@@ -3609,11 +3609,10 @@
     });
   });
 
-  /* ---------- 面板独占（v1.22）：单击标题栏铺满其余空间，同栏 400ms 内再击还原 ----------
-   * 用 400ms 双击窗口而非原生 dblclick：触屏上双击也走 click 事件，行为桌面/移动一致。
+  /* ---------- 面板独占（v1.23）：单击标题栏铺满其余空间，再单击该栏标题栏即还原 ----------
    * 标题栏里的按钮（折叠箭头 / 面板操作）照旧，不触发独占。 */
   const sidebarEl = $('sidebar');
-  let soloPanel = null, soloLastClick = 0;
+  let soloPanel = null;
   function setSolo(panel) {
     sidebarEl.classList.toggle('solo-mode', !!panel);
     sidebarEl.querySelectorAll('.panel').forEach((p) => p.classList.toggle('soloed', p === panel));
@@ -3626,14 +3625,7 @@
       if (e.target.closest('button')) return;         // 折叠箭头 / 面板操作按钮照旧
       const panel = head.closest('.panel');
       if (!panel) return;
-      const now = Date.now();
-      if (soloPanel === panel && now - soloLastClick < 400) {
-        setSolo(null);                                // 同栏快速再击 → 还原三栏默认
-        soloLastClick = 0;
-        return;
-      }
-      soloLastClick = now;
-      setSolo(panel);
+      setSolo(soloPanel === panel ? null : panel);    // 单击已独占栏 → 还原；单击其他栏 → 切换独占
     });
   });
 

@@ -1,16 +1,16 @@
 'use strict';
 /* ============================================================================
- * 侧栏面板独占 · 回归测试（v1.22-panel-solo）
+ * 侧栏面板独占 · 回归测试（v1.23-panel-solo）
  *
  * 需求：单击面板标题栏 → 其他栏最小化为标题条、该栏铺满其余空间；
- *       同栏再次双击 → 恢复三栏默认均分。
+ *       再单击该栏标题栏 → 恢复三栏默认均分。
  *
  * 覆盖：
  *   0. 基线：三栏默认均分
  *   1. 单击标题栏 → 独占（其他栏 body 隐藏、高度=标题条；该栏铺满）
  *   2. 标题栏内按钮不触发独占（chev 折叠照旧、面板操作按钮照旧）
  *   3. 独占中点另一栏 → 切换独占
- *   4. 同栏 400ms 内两击 → 还原三栏均分
+ *   4. 再单击独占栏标题栏 → 还原三栏均分
  *   5. 被折叠过的栏独占时自动展开
  *
  * 用法：node bench/panel-solo.js [--port 9533]
@@ -82,7 +82,7 @@ async function main() {
       o.gap = 24; // 12px gap × 2
       return o;
     })()`, { awaitPromise: false, returnByValue: true });
-    // 点击标题栏（target 指定栏、点标题文字而非按钮）；times=2 模拟双击（同一 eval 内两击 <400ms）
+    // 点击标题栏（target 指定栏、点标题文字而非按钮）；times 参数保留兼容旧调用
     const clickHead = async (panelId, times) => {
       await cdp.eval(`(() => {
         const head = document.querySelector('#${panelId} > .panel-head');
@@ -132,16 +132,14 @@ async function main() {
     /* ============ 用例 3：独占中点另一栏 → 切换 ============ */
     console.log('\n=== 用例 3 · 切换独占 ===');
     await clickHead('filePanel', 1);
-    await sleep(250);                        // 与上一击自然间隔 >400ms，确保是新的一次独占而非还原
     L = await readLayout();
     check('filePanel 成为独占栏', L.soloMode === true && L.filePanel.soloed === true);
     check('searchPanel 退回标题条', !L.searchPanel.soloed && !L.searchPanel.bodyShown && L.searchPanel.h < 60);
     check('filePanel 铺满（三栏和=侧栏内高−间隙，±4px）', fillsSolo(L), 'sum=' + (L.filePanel.h + L.searchPanel.h + L.excerptPanel.h) + ' 期望≈' + (L.sidebarH - 24));
 
-    /* ============ 用例 4：同栏 400ms 内两击 → 还原 ============ */
-    console.log('\n=== 用例 4 · 双击还原 ===');
-    await sleep(500);                        // 与上一击拉开 >400ms，确保两击被识别为双击而非「还原+再独占」
-    await clickHead('filePanel', 2);
+    /* ============ 用例 4：再单击独占栏标题栏 → 还原 ============ */
+    console.log('\n=== 用例 4 · 单击还原 ===');
+    await clickHead('filePanel', 1);
     L = await readLayout();
     check('退出 solo-mode', L.soloMode === false);
     check('三栏均无 soloed 标记', !L.filePanel.soloed && !L.searchPanel.soloed && !L.excerptPanel.soloed);
@@ -156,8 +154,7 @@ async function main() {
     L = await readLayout();
     check('折叠态被独占清除（collapsed 移除）', L.excerptPanel.collapsed === false);
     check('独占栏 body 可见且铺满', L.excerptPanel.bodyShown && fillsSolo(L), 'sum=' + (L.filePanel.h + L.searchPanel.h + L.excerptPanel.h) + ' 期望≈' + (L.sidebarH - 24));
-    await sleep(500);                        // 与上一击拉开 >400ms
-    await clickHead('excerptPanel', 2);      // 还原，收尾
+    await clickHead('excerptPanel', 1);      // 再单击 → 还原，收尾
     await sleep(150);
     L = await readLayout();
     check('还原后退出独占', L.soloMode === false);
