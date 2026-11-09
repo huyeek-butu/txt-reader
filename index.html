@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html lang="zh-CN" data-theme="system">
+<html data-theme="system" lang="zh-CN">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta charset="UTF-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
 <title>TXT 阅读器 · 项目 · 章节 · 翻页</title>
 <style>
   /* ============ 主题变量 ============ */
@@ -228,7 +228,25 @@
 
   #spacer { position: relative; width: 100%; }
   #content { position: absolute; top: 0; left: 0; will-change: transform; contain: layout style; transition: opacity .28s var(--ease); }
-  .row { display: flex; align-items: flex-start; box-sizing: border-box; transition: background-color .12s linear; }
+  .row { display: flex; align-items: flex-start; box-sizing: border-box; position: relative; transition: background-color .12s linear; }
+  /* 翻页末行标记：只标「触发翻页时被翻走那页的最后一行」，翻页后该行落在新页顶部
+     （分页保留两行重叠），行号下方这条线即「上一页读到哪」的锚点。
+     用绝对定位 ::after 而非 border-bottom：border 会占 1px 内容高度，
+     固定行高下会把该行文字挤出 overflow（同 .row.spk 的处理）。
+     仅由 JS 给唯一一行加 .page-end，不会出现在其它行。 */
+  #content .row.page-end::after {
+    content: "";
+    position: absolute; left: 0; right: 0; bottom: 0;
+    height: 2px;
+    background: var(--page-end-mark, var(--accent));
+    opacity: .55;
+    pointer-events: none;
+  }
+  /* 阅读模式底色与应用主题解耦：线色改跟正文色，避免浅阅读底上浅色线看不见 */
+  body.reading-mode #content .row.page-end::after {
+    background: var(--read-text, var(--text));
+    opacity: .4;
+  }
   .row:hover { background: var(--row-hover); }
   .ln { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: flex-end; text-align: right; padding: 0 14px 0 16px; color: var(--muted); user-select: none; border-right: 1px solid var(--border); font-variant-numeric: tabular-nums; white-space: nowrap; line-height: var(--line-height, 1.8); height: 100%; font-size: var(--font-size, 14px); }
   .tx { position: relative; flex: 1 1 auto; min-height: 0; height: 100%; padding: 0 16px; white-space: pre-wrap; word-break: break-word; line-height: var(--line-height, 1.8); overflow: hidden; font-size: var(--font-size, 14px); }
@@ -335,6 +353,14 @@
   /* 章节目录（v1.25）：章级平铺，节/讲/集级缩进一级 */
   .toc-item { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .toc-item.lv1 { padding-left: 26px; color: var(--muted); }
+  /* 双击正文定位到的章节：跟随主题色，左竖条 + 淡底，和搜索命中/选中行区分开 */
+  .toc-item.current {
+    background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 16%, transparent), color-mix(in srgb, var(--accent2) 16%, transparent));
+    box-shadow: inset 3px 0 0 var(--accent);
+    color: var(--text);
+    font-weight: 600;
+  }
+  .toc-item.current.lv1 { color: var(--text); }
 
   /* 翻页栏。必须允许换行，且在**任何视口**下都允许：
      ① 实测 375px 视口下右侧的「速度」控件组（.speed-box）会把文档宽度撑到 506px，
@@ -691,11 +717,11 @@
       </div>
       <div class="ctrl">
         <button class="btn-primary" id="openBtn">📂 打开文件</button>
-        <input type="file" id="fileInput" accept=".txt,text/plain" multiple />
+        <input accept=".txt,text/plain" id="fileInput" multiple type="file">
       </div>
       <div class="ctrl">
         <button class="btn-ghost" id="openFolderBtn">📁 打开文件夹</button>
-        <input type="file" id="folderInput" accept=".txt,text/plain" webkitdirectory directory multiple />
+        <input accept=".txt,text/plain" directory id="folderInput" multiple type="file" webkitdirectory>
       </div>
 
       <div class="ctrl">
@@ -709,7 +735,7 @@
       <div class="ctrl">
         <label>换行</label>
         <div class="seg" id="wrapSeg">
-          <button data-wrap="1" class="active">自动</button>
+          <button class="active" data-wrap="1">自动</button>
           <button data-wrap="0">不换行</button>
         </div>
       </div>
@@ -720,7 +746,7 @@
           <option value="16">16px</option>
           <option value="18">18px</option>
           <option value="20">20px</option>
-          <option value="24" selected>24px</option>
+          <option selected value="24">24px</option>
           <option value="28">28px</option>
           <option value="32">32px</option>
           <option value="36">36px</option>
@@ -728,10 +754,10 @@
       </div>
       <div class="ctrl">
         <label>主题</label>
-        <div class="seg" id="themeSeg" role="group" aria-label="主题切换">
-          <button data-theme="light" title="明亮护眼 · 暖纸感减蓝光" aria-label="明亮护眼主题">☀ 亮</button>
-          <button data-theme="dark" title="暗色护眼 · 非纯黑柔对比" aria-label="暗色护眼主题">🌙 暗</button>
-          <button data-theme="system" title="跟随系统" aria-label="跟随系统">⚙ 系统</button>
+        <div aria-label="主题切换" class="seg" id="themeSeg" role="group">
+          <button aria-label="明亮护眼主题" data-theme="light" title="明亮护眼 · 暖纸感减蓝光">☀ 亮</button>
+          <button aria-label="暗色护眼主题" data-theme="dark" title="暗色护眼 · 非纯黑柔对比">🌙 暗</button>
+          <button aria-label="跟随系统" data-theme="system" title="跟随系统">⚙ 系统</button>
         </div>
       </div>
 
@@ -742,15 +768,15 @@
         <button class="btn-ghost" id="simpleLayoutBtn" title="简单排版 · 按句分段">✒ 简单排版</button>
       </div>
       <div class="ctrl">
-        <button class="btn-ghost active" id="layoutToggleBtn" title="正文按句分段排版（与「简单排版」同一规则，点击切换原样/排版）" aria-pressed="true">✒ 正文排版</button>
+        <button aria-pressed="true" class="btn-ghost active" id="layoutToggleBtn" title="正文按句分段排版（与「简单排版」同一规则，点击切换原样/排版）">✒ 正文排版</button>
       </div>
       <!-- v1.16：导出前置到朗读之前 —— 「排版 → 导出」是同一条文字加工与输出链，
            朗读是听书分支（点击即进纯净模式、顶栏被隐藏），单独收在末尾避免夹断前者。 -->
       <div class="ctrl">
-        <button class="btn-ghost" id="exportBtn" title="导出当前排版结果为 TXT 文件" disabled>⤓ 导出结果</button>
+        <button class="btn-ghost" disabled id="exportBtn" title="导出当前排版结果为 TXT 文件">⤓ 导出结果</button>
       </div>
       <div class="ctrl">
-        <button class="btn-ghost" id="speakBtn" title="从当前位置开始朗读（TTS）" disabled>🔊 朗读</button>
+        <button class="btn-ghost" disabled id="speakBtn" title="从当前位置开始朗读（TTS）">🔊 朗读</button>
       </div>
     </header>
 
@@ -768,7 +794,7 @@
             <span class="count" id="fileCount">0</span>
           </div>
           <div class="panel-body">
-            <input class="search" id="fileSearch" placeholder="搜索文件…" />
+            <input class="search" id="fileSearch" placeholder="搜索文件…">
             <div class="list" id="fileList"></div>
           </div>
         </section>
@@ -781,9 +807,9 @@
           </div>
           <div class="panel-body">
             <div class="search-wrap">
-              <input class="search" id="locSearch" placeholder="搜索定位…支持 * 通配（如 第*章），回车跳转下一处" />
-              <button class="search-btn" id="locSearchBtn" type="button" title="搜索 / 跳转下一处 (Enter)">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input class="search" id="locSearch" placeholder="搜索定位…支持 * 通配（如 第*章），回车跳转下一处">
+              <button class="search-btn" id="locSearchBtn" title="搜索 / 跳转下一处 (Enter)" type="button">
+                <svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.4" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" x2="16.65" y1="21" y2="16.65"/></svg>
                 <span class="btn-text">搜索</span>
               </button>
             </div>
@@ -911,22 +937,22 @@
         <button class="btn-icon" id="autoPlay" title="自动翻页（空格）">▶| 自动翻页 (空格)</button>
         <span class="speed-box">
           <label>每页</label>
-          <input type="number" id="speedInput" min="15" max="90" step="15" value="30" />
+          <input id="speedInput" max="90" min="15" step="5" type="number" value="30">
           <span id="speedVal">30s/页</span>
         </span>
       </div>
       </main>
 
       <!-- 简单排版弹窗：按句分段 -->
-      <div class="modal-mask" id="slMask" hidden>
-        <div class="modal-card" id="slCard" role="dialog" aria-modal="true" aria-label="简单排版">
-          <div class="modal-head">✒ 简单排版 · 按句分段<span class="modal-x" id="slClose" role="button" title="关闭" aria-label="关闭">✕</span></div>
+      <div class="modal-mask" hidden id="slMask">
+        <div aria-label="简单排版" aria-modal="true" class="modal-card" id="slCard" role="dialog">
+          <div class="modal-head">✒ 简单排版 · 按句分段<span aria-label="关闭" class="modal-x" id="slClose" role="button" title="关闭">✕</span></div>
           <div class="modal-body">
             <label for="slInput">原文（大段连续文字）</label>
             <textarea id="slInput" placeholder="粘贴或输入大段连续文字，输入即实时按句分段…"></textarea>
             <label for="slOutput">排版结果（每句一段，段间空行；连续短对话不空行 — <b>可直接修改</b>）</label>
             <textarea id="slOutput" placeholder="排版后的文本将显示在这里，可直接修改再复制 / 保存…"></textarea>
-            <div class="sl-editbar" id="slEditBar" hidden>
+            <div class="sl-editbar" hidden id="slEditBar">
               <span class="sl-edit-tip" id="slDirtyTip">已手动修改：自动排版暂停，避免覆盖你的改动</span>
             </div>
           </div>
@@ -934,7 +960,7 @@
           <div class="modal-foot">
             <button class="btn-primary" id="slCopy" type="button">复制结果</button>
             <button class="btn-primary" id="slSave" type="button">保存为 TXT</button>
-            <button id="slRerun" type="button" hidden title="按上方原文重新排版，会覆盖当前修改">重新排版</button>
+            <button hidden id="slRerun" title="按上方原文重新排版，会覆盖当前修改" type="button">重新排版</button>
             <button id="slClear" type="button">清空</button>
             <span class="sl-stat" id="slStat"></span>
           </div>
@@ -954,17 +980,17 @@
   </div>
 
   <!-- 纯净阅读模式控制条 -->
-  <div class="read-bar" id="readBar" hidden>
+  <div class="read-bar" hidden id="readBar">
     <div class="grp">
       <label>字号</label>
-      <button id="readFontMinus" type="button" title="减小字号">A−</button>
-      <span id="readFontVal" style="min-width:38px;text-align:center;font-weight:600;font-size:13px;font-variant-numeric:tabular-nums;">20px</span>
-      <button id="readFontPlus" type="button" title="增大字号">A＋</button>
+      <button id="readFontMinus" title="减小字号" type="button">A−</button>
+      <span id="readFontVal" style="min-width:38px; text-align:center; font-weight:600; font-size:13px; font-variant-numeric:tabular-nums">20px</span>
+      <button id="readFontPlus" title="增大字号" type="button">A＋</button>
     </div>
     <span class="sep"></span>
     <div class="grp">
       <div class="seg" id="readFontSeg">
-        <button data-font="sans" class="active" type="button">黑体</button>
+        <button class="active" data-font="sans" type="button">黑体</button>
         <button data-font="serif" type="button">宋体</button>
         <button data-font="mono" type="button">等宽</button>
       </div>
@@ -974,7 +1000,7 @@
       <label>宽度</label>
       <div class="seg" id="readWidthSeg">
         <button data-width="narrow" type="button">窄</button>
-        <button data-width="medium" class="active" type="button">中</button>
+        <button class="active" data-width="medium" type="button">中</button>
         <button data-width="wide" type="button">宽</button>
       </div>
     </div>
@@ -985,25 +1011,25 @@
     </div>
     <span class="sep"></span>
     <div class="grp">
-      <button id="readThemeToggle" type="button" title="明暗主题切换">🌓</button>
+      <button id="readThemeToggle" title="明暗主题切换" type="button">🌓</button>
     </div>
     <span class="sep"></span>
     <div class="grp speak-bar">
-      <button id="spkPlay" type="button" title="开始 / 继续朗读">▶ 朗读</button>
-      <button id="spkPause" type="button" title="暂停朗读" disabled>⏸ 暂停</button>
-      <button id="spkStop" type="button" title="停止朗读并清除高亮" disabled>⏹ 停止</button>
-      <button id="spkFollow" type="button" class="active" title="跟随朗读自动滚动（关闭后高亮仍在，但不再自动滚动）">🎯 跟随</button>
+      <button id="spkPlay" title="开始 / 继续朗读" type="button">▶ 朗读</button>
+      <button disabled id="spkPause" title="暂停朗读" type="button">⏸ 暂停</button>
+      <button disabled id="spkStop" title="停止朗读并清除高亮" type="button">⏹ 停止</button>
+      <button class="active" id="spkFollow" title="跟随朗读自动滚动（关闭后高亮仍在，但不再自动滚动）" type="button">🎯 跟随</button>
       <span class="spk-rate" id="spkRateVal">1.0×</span>
-      <input type="range" id="spkRate" min="0.5" max="2" step="0.1" value="1" title="语速 0.5–2.0×" aria-label="朗读语速" />
-      <select id="spkVoice" title="选择中文语音" aria-label="选择语音"></select>
+      <input aria-label="朗读语速" id="spkRate" max="2" min="0.5" step="0.1" title="语速 0.5–2.0×" type="range" value="1">
+      <select aria-label="选择语音" id="spkVoice" title="选择中文语音"></select>
     </div>
     <span class="sep"></span>
     <div class="grp actions">
-      <button id="readSettings" class="btn-ghost settings-btn" type="button" title="收起 / 展开设置">
+      <button class="btn-ghost settings-btn" id="readSettings" title="收起 / 展开设置" type="button">
         <span class="settings-text">⚙ 设置</span>
         <span class="settings-icon">⚙</span>
       </button>
-      <button class="exit" id="readExit" type="button" title="退出纯净阅读 (R / Esc)">✕ 退出</button>
+      <button class="exit" id="readExit" title="退出纯净阅读 (R / Esc)" type="button">✕ 退出</button>
     </div>
   </div>
 
@@ -1096,6 +1122,10 @@
     layoutEnabled: true,  // 主窗口正文是否套用「简单排版」同一规则（按句分段）
     wrapCol: 0            // 标尺换行边界列数（0 = 自动·视口宽度；>0 = 正文按此列位置换行）
   };
+
+  // 翻页末行标记：记录「触发翻页时被翻走那页」的末行视觉索引（-1 = 无标记）。
+  // 只保留一个值 —— 标记永远只作用于最近一次翻页的那一行；重排 / 换文件 / 清空时置 -1。
+  let pageEndMark = -1;
 
   /* ---------- 测量 canvas ---------- */
   const mCanvas = document.createElement('canvas');
@@ -1516,6 +1546,7 @@
   // 补齐完成：总数落到精确值，分页与标尺按精确值重算一次。
   // 页码以「当前滚动位置对应的视觉行」为锚，故页数修正不会让正文跳位。
   function finishFill() {
+    pageEndMark = -1;                           // 页数由估算转精确，旧页末行索引不可信
     state.totalVisualRows = state.visualRows.length;
     state.linesTotalEst = state.lines.length;   // 估算转精确
     Ex.onLinesChanged();                        // 全量行已就绪 → 解析前缀期未能定位的摘录（PLAN-D）
@@ -1587,6 +1618,7 @@
   }
 
   function computeLayout() {
+    pageEndMark = -1;                  // 重排后旧页边界失效，翻页末行标记作废
     applyFont();
     viewport.style.setProperty('--font-size', state.fontSize + 'px');   // 字号真正作用到 DOM 文本
     viewport.style.setProperty('--line-height', state.lineHeight + 'px');
@@ -2660,6 +2692,7 @@
       const isSpk = !!(spk && vr.lineIndex === spk.li && vr.end > spk.s && vr.start < spk.e);
       const isAnchor = anchor != null && vr.lineIndex === anchor;
       html += '<div class="row' + (hl ? ' hlx' : '') + (isSpk ? ' spk' : '') + (isAnchor ? ' anchor' : '')
+            + (i === pageEndMark ? ' page-end' : '')
             + '" data-li="' + vr.lineIndex + '" data-vr="' + i + '"'
             + ' style="height:' + state.lineHeight + 'px">'
             + '<span class="ln" style="width:' + gw + '">' + (i + 1) + '</span>'
@@ -2866,11 +2899,14 @@
   function updatePageInfo() {
     pageInfo.textContent = currentPage() + ' / ' + totalPages();
   }
-  function goToPage(p) {
+  function goToPage(p, keepEndMark) {
     const pages = state.pages;
     if (!pages.length) return;
     p = Math.max(1, Math.min(p, pages.length));
     navPage = p;
+    // 非翻页跳转（目录 / 搜索 / Home-End / 恢复进度）清除上一条末行标记，
+    // 避免旧位置线落在完全无关的页面上；翻页路径由 turnPage 显式保留。
+    if (!keepEndMark) pageEndMark = -1;
     isScrolling = true;
     viewport.scrollTo({ top: visualTop(pages[p - 1]), behavior: 'smooth' });
     clearTimeout(scrollDoneTimer);
@@ -2878,11 +2914,32 @@
     scrollDoneTimer = setTimeout(() => { isScrolling = false; }, 420);
     scheduleSaveProgress();
   }
-  function nextPage() { goToPage(navPage + 1); resetAutoTimer(); }
-  function prevPage() { goToPage(navPage - 1); resetAutoTimer(); }
+  // 当前页最后一行（视觉行索引）：分页按 rowsPerScreen 推进，末页从底部倒推一屏。
+  // 末行取「视口里还能看到文字的最后一行」——视口高度通常不是行高整数倍，
+  // 余下那截若够高（≥1/4 行）就算作本页最后一行，否则翻页后标记会比读者看到的末行高一行。
+  function pageLastVisualRow(page) {
+    if (!state.pages.length || !state.totalVisualRows) return -1;
+    const p = Math.max(1, Math.min(page, state.pages.length));
+    const vh = viewport.clientHeight || 1;
+    const full = Math.floor(vh / state.lineHeight);
+    const part = (vh - full * state.lineHeight) >= state.lineHeight * 0.25 ? 1 : 0;
+    const rows = Math.max(3, full + part);
+    return Math.min(state.totalVisualRows - 1, state.pages[p - 1] + rows - 1);
+  }
+  // 行翻页：翻页前记下「本页最后一行」，翻页后（保留两行重叠）它落在新页顶部，
+  // render() 在该行行号下方画下划线，标出上一页末行的位置。
+  function turnPage(delta) {
+    const from = navPage;
+    const target = Math.max(1, Math.min(from + delta, totalPages()));
+    if (target === from) return;          // 已到首/末页：不翻页，也不产生标记
+    pageEndMark = pageLastVisualRow(from);
+    goToPage(target, true);
+  }
+  function nextPage() { turnPage(1); resetAutoTimer(); }
+  function prevPage() { turnPage(-1); resetAutoTimer(); }
 
   let autoTimer = null;
-  let autoSeconds = 30;           // 每页停留秒数（15–90，步进 15）
+  let autoSeconds = 30;           // 每页停留秒数（基准 30，范围 15–90，步进 5）
   function fmtSpeed() { return autoSeconds + 's/页'; }
   function updateSpeedLabel() { speedVal.textContent = fmtSpeed(); }
   function tickAuto() {
@@ -3016,6 +3073,7 @@
     spacer.style.width = '100%';
     stopAuto();
     navPage = 1; isScrolling = false;
+    pageEndMark = -1;
     stFile.textContent = '—';
     stDetect.textContent = '—';
     stCurrent.textContent = '—';
@@ -3339,6 +3397,7 @@
     const MAX_ITEMS = 5000;   // 防御上限
     let entries = [];
     let timer = null;
+    let activeLi = -1;        // 双击正文定位到的章（标题行号）；-1 = 无高亮
 
     function rebuild() {
       const lines = state.lines || [];
@@ -3349,14 +3408,43 @@
         const s = t.trim();
         const m = Layout.matchHeadLine(s);   // 与排版引擎的「标题行单独成段」同一规则（单一来源）
         if (!m) continue;
-        list.push({ li: i, text: s.length > 42 ? s.slice(0, 42) + '…' : s, level: /[节讲集]$/.test(m[1]) ? 1 : 0 });
+        list.push({ li: i, full: s, text: s.length > 42 ? s.slice(0, 42) + '…' : s, level: /[节讲集]$/.test(m[1]) ? 1 : 0 });
       }
       entries = list;
+      activeLi = -1;   // 目录重建 = 换文件 / 重排，旧定位高亮失效
       renderPanel();
     }
     function schedule() {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => { timer = null; rebuild(); }, 300);   // 防抖：分片期间多次触发只扫最后一次
+    }
+    // 只改高亮态，不重建列表：目录可能上千条，按 li 找一项最省
+    function paintActive(scroll) {
+      const listEl = document.getElementById('tocList');
+      if (!listEl) return;
+      listEl.querySelectorAll('.toc-item.current').forEach(el => el.classList.remove('current'));
+      if (activeLi < 0) return;
+      const el = listEl.querySelector('.toc-item[data-li="' + activeLi + '"]');
+      if (!el) return;
+      el.classList.add('current');
+      if (scroll) el.scrollIntoView({ block: 'nearest' });
+    }
+    function clearActive() {
+      if (activeLi < 0) return;
+      activeLi = -1;
+      paintActive(false);
+    }
+    // 目录可能被侧栏折叠 / 面板收起 / 其它面板独占，双击定位前先把它露出来
+    function reveal() {
+      const appEl = document.getElementById('app');
+      const side = document.getElementById('sidebar');
+      const panel = document.getElementById('tocPanel');
+      if (!panel) return;
+      if (appEl) appEl.classList.remove('sidebar-collapsed');
+      panel.classList.remove('collapsed');
+      if (side && side.classList.contains('solo-mode') && !panel.classList.contains('soloed')) {
+        setSolo(panel);   // 独占模式下不切换的话目录只剩标题条，列表看不见
+      }
     }
     function renderPanel() {
       const listEl = document.getElementById('tocList');
@@ -3367,10 +3455,12 @@
       if (!entries.length) { listEl.innerHTML = '<div class="empty-list">未识别到章节标题<br><small>识别：第X章/回/节/卷/部/篇/集/讲、楔子/序章/前言/后记等（整行 ≤60 字）</small></div>'; return; }
       for (const en of entries) {
         const item = document.createElement('div');
-        item.className = 'list-item toc-item' + (en.level ? ' lv1' : '');
+        item.className = 'list-item toc-item' + (en.level ? ' lv1' : '') + (en.li === activeLi ? ' current' : '');
+        item.dataset.li = String(en.li);
         item.textContent = en.text;
         item.title = en.text;
         item.addEventListener('click', () => {
+          clearActive();   // 用户主动跳章：不再保留「双击位置」的定位高亮
           ensureRowsUpTo(en.li);
           const vr = state.lineFirstVisualRow[en.li];
           if (!(vr >= 0)) return;
@@ -3379,7 +3469,36 @@
         listEl.appendChild(item);
       }
     }
-    return { schedule };
+    function norm(s) { return String(s || '').replace(/[\s\u3000]+/g, ''); }
+    // 双击正文后定位章节。匹配两级：
+    //   ① 位置匹配（主规则）：双击行落在 [本章标题行, 下一章标题行) 区间 → 该章。
+    //      正文里引用「第X章」不会把定位带偏，稳定对应「我正在读哪一章」。
+    //   ② 文本匹配（兜底）：仅当位置无归属（如正文排在第一章标题之前）时，
+    //      才在双击行里找出现的章节标题，取最长命中（≥4 字，防单字误配）。
+    function locate(lineText, li) {
+      if (!entries.length) return null;
+      let hit = null;
+      for (const en of entries) {
+        if (en.li <= li) hit = en; else break;
+      }
+      if (!hit) {
+        const ln = norm(lineText);
+        let best = 3;
+        if (ln) {
+          for (const en of entries) {
+            const t = norm(en.full);
+            if (t.length > best && ln.includes(t)) { hit = en; best = t.length; }
+          }
+        }
+      }
+      if (!hit) return null;
+      activeLi = hit.li;
+      reveal();
+      paintActive(false);
+      setTimeout(() => paintActive(true), 0);   // 面板刚展开时布局未落定，下一拍再滚动
+      return hit;
+    }
+    return { schedule, locate, clearActive };
   })();
 
   /* ---------- 通配符匹配引擎 ---------- */
@@ -3632,6 +3751,7 @@
   function toggleReadingMode(force) {
     const on = force !== undefined ? !!force : !document.body.classList.contains('reading-mode');
     navPage = 1; isScrolling = false;       // 进入/退出纯净阅读重置翻页基准
+    pageEndMark = -1;                       // 阅读模式改变行高与行号显隐，旧标记作废
     if (on) {
       document.body.classList.add('reading-mode');
       state.fontSize = readSettings.fontSize;
@@ -4022,6 +4142,7 @@
   // 选定标记为 .row.anchor（左侧竖条 + 行号变色），与朗读中的 .row.spk 并存不冲突。
   content.addEventListener('click', (e) => {
     if (!state.bytes) return;
+    if (e.detail > 1) return;   // 双击交给 dblclick（章节定位），第二击不再切换朗读选定行
     // 拖选文本后也会派发 click，此时不应改变选定行
     const sel = window.getSelection ? window.getSelection() : null;
     if (sel && String(sel).length) return;
@@ -4033,6 +4154,32 @@
     Speak.setAnchor(li);
     if (Speak.getAnchor() == null) showToast('已取消选定行');
     else showToast('已选定第 ' + (isFinite(vr) ? vr + 1 : li + 1) + ' 行：下次朗读从此行开始');
+  });
+
+  // 双击正文 = 定位到该行所属章节：左侧章节目录滚动到对应项并高亮。
+  // 取行优先用插入符命中（caretRangeFromPoint），取不到再按 y 坐标换算视觉行兜底。
+  content.addEventListener('dblclick', (e) => {
+    if (!state.bytes) return;
+    let li = -1;
+    try {
+      const r = document.caretRangeFromPoint
+        ? document.caretRangeFromPoint(e.clientX, e.clientY)
+        : (document.caretPositionFromPoint ? document.caretPositionFromPoint(e.clientX, e.clientY) : null);
+      const node = r ? (r.startContainer || r.offsetNode) : null;
+      const el = node ? (node.nodeType === 1 ? node : node.parentElement) : null;
+      const row = el && el.closest ? el.closest('#content .row') : null;
+      if (row && row.dataset.li) li = parseInt(row.dataset.li, 10);
+    } catch (err) {}
+    if (!(li >= 0)) {
+      const box = viewport.getBoundingClientRect();
+      const vr = Math.floor((e.clientY - box.top + viewport.scrollTop) / state.lineHeight);
+      if (vr >= 0 && vr < state.visualRows.length) li = state.visualRows[vr].lineIndex;
+    }
+    if (!(li >= 0)) { showToast('未定位到正文行'); return; }
+    const hit = Toc.locate(state.lines[li] || '', li);
+    if (!hit) { showToast('未找到对应章节'); return; }
+    const name = hit.full.length > 22 ? hit.full.slice(0, 22) + '…' : hit.full;
+    showToast('已定位章节：' + name);
   });
 
   Speak.on('state', () => {                     // 语音列表异步就绪后补一次下拉
@@ -4163,8 +4310,8 @@
   speedInput.addEventListener('input', () => {
     let v = parseFloat(speedInput.value);
     if (!isFinite(v)) return;
-    // 以 15 秒为单位吸附，范围 15–90
-    v = Math.round(v / 15) * 15;
+    // 以 30 秒为基准，上下箭头每次 ±5 秒吸附，范围 15–90
+    v = Math.round(v / 5) * 5;
     if (v < 15) v = 15;
     if (v > 90) v = 90;
     autoSeconds = v;
@@ -4209,8 +4356,8 @@
     // 与翻页栏按钮、自动翻页共用同一套 buildPages 分页（navPage 确定性基准），
     // 保证「1 次按键 = 精确 1 页 = 计数器 +1」，且两行重叠衔接内置于 buildPages，
     // 不会出现“按几下就跳过多页”的问题。
-    if (key === 'PageUp') goToPage(navPage - 1);
-    else if (key === 'PageDown') goToPage(navPage + 1);
+    if (key === 'PageUp') prevPage();
+    else if (key === 'PageDown') nextPage();
     // Home 跳到开头（第一页），End 跳到结尾（最后一页，正文底部正好可见）
     else if (key === 'Home') { goToPage(1); resetAutoTimer(); }
     else if (key === 'End') { goToPage(totalPages()); resetAutoTimer(); }
