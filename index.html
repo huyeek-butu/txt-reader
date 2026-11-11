@@ -70,6 +70,19 @@
   }
 
   .app { height: 100vh; display: flex; flex-direction: column; padding: 16px; gap: 14px; }
+  /* 安卓动态视口：100vh 取的是「地址栏收起时」的高度，地址栏在场时底部会被顶出屏幕
+     （状态栏看不见、正文末行点不到）。dvh 跟随实际可视高度，旧内核回退到 vh。 */
+  @supports (height: 100dvh) {
+    .app { height: 100dvh; }
+  }
+  /* 触摸基线：去掉点击后的灰色高亮方块；关掉双击缩放 —— 双击在安卓上是「定位章节」
+     的手势，被浏览器缩放抢走就用不了，双指缩放仍然保留。 */
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  body { overscroll-behavior-y: none; }
+  button, select, .seg button, .list-item, .panel-head, .panel-actions button {
+    -webkit-tap-highlight-color: transparent; touch-action: manipulation;
+  }
+  #viewport, #content { touch-action: pan-y pinch-zoom; overscroll-behavior: contain; }
 
   /* ============ 顶栏 ============ */
   .topbar {
@@ -377,6 +390,20 @@
     transition: background-color .4s var(--ease), border-color .4s var(--ease);
   }
   #pageInfo { font-variant-numeric: tabular-nums; min-width: 70px; text-align: center; font-weight: 600; }
+  /* 阅读进度（v1.29）：紧挨页码，等宽数字避免百分比变化时整行左右抖动 */
+  .prog-item {
+    flex: 0 0 auto;
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 9px; border-radius: 999px;
+    background: var(--surface-solid); border: 1px solid var(--border);
+    color: var(--muted); font-size: 12px; font-weight: 600;
+  }
+  .prog-item .prog-label { letter-spacing: .2px; }
+  .prog-item b {
+    color: var(--text); font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    min-width: 34px; text-align: right;    /* 1 位 → 3 位百分比都占同样宽度 */
+  }
   .btn-icon { padding: 8px 12px; font-weight: 600; }
   .btn-icon.active { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: #fff; border: none; }
   .btn-icon:disabled { opacity: .4; cursor: not-allowed; filter: grayscale(.4); }
@@ -388,15 +415,58 @@
   .speed-box #speedVal { font-variant-numeric: tabular-nums; min-width: 40px; font-weight: 600; color: var(--text); }
 
   /* ============ 状态栏 ============ */
+  /* ============ 底栏（v1.28）：翻页控件 + 文件信息合并成一行 ============
+     原先翻页栏在阅读列内、状态栏是另一条通栏：两行合计约 100px，左右边界还不对齐
+     （翻页栏只覆盖阅读列宽度）。合并后一条通栏：控件靠左、信息靠右，中间一条细分隔线。
+     不换行（nowrap）+ 容器内部横向滚动 —— 窄屏只会横滑，永远不会换行或撑破页面。 */
   .statusbar {
-    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 18px; padding: 10px 16px;
-    font-size: 12.5px; color: var(--muted);
+    flex: 0 0 auto;                 /* 不许被正文挤扁 */
+    display: flex; align-items: center; gap: 12px;
+    padding: 6px 12px;
+    font-size: 12.5px; color: var(--muted); white-space: nowrap;
     background: var(--surface); backdrop-filter: blur(18px) saturate(160%);
     -webkit-backdrop-filter: blur(18px) saturate(160%);
     border: 1px solid var(--border); border-radius: var(--radius);
+    overflow-x: auto; overflow-y: hidden;
     transition: background-color .4s var(--ease), border-color .4s var(--ease);
   }
-  .statusbar .item { display: flex; align-items: center; gap: 6px; }
+  .statusbar::-webkit-scrollbar { height: 4px; }
+  .statusbar::-webkit-scrollbar-thumb { background: var(--glow); border-radius: 4px; }
+  /* 内嵌的翻页栏退化为纯排布容器，不再自带面板外观，也不自带滚动 */
+  .statusbar > .pagebar {
+    flex: 0 0 auto; flex-wrap: nowrap; align-content: center;
+    max-height: none; overflow: visible;
+    background: none; border: none; border-radius: 0; padding: 0;
+    backdrop-filter: none; -webkit-backdrop-filter: none;
+  }
+  .statusbar .fdivider { flex: 0 0 auto; width: 1px; height: 20px; background: var(--border); }
+  .statusbar > .fileinfo {
+    margin-left: auto; flex: 0 1 auto;          /* 空间不够时优先压缩这一段（文件名先省略），控件不受影响 */
+    display: flex; align-items: center; gap: 16px; min-width: 0;
+  }
+  /* 文件名过长时省略，绝不把这一行顶破 */
+  .statusbar #stFile {
+    display: inline-block; max-width: 260px; overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom;
+  }
+  .statusbar .item[hidden] { display: none; }
+  /* 中等宽度（≤1200px）收紧间距与文件名宽度：让整行在 1024 宽窗口里也放得下，不用横滑 */
+  @media (max-width: 1200px) {
+    .statusbar { gap: 6px; padding: 6px 6px; font-size: 12px; }
+    .statusbar .item { gap: 4px; }
+    .statusbar .chip { padding: 2px 6px; }
+    .statusbar > .fileinfo { gap: 6px; }
+    .statusbar > .pagebar { gap: 6px; }
+    .statusbar > .pagebar button { padding: 6px 6px; }
+    .statusbar .prog-item { padding: 2px 7px; gap: 4px; }
+    .statusbar .prog-label { display: none; }   /* 中等宽度省掉「进度」二字，百分比本身可读（title 里有明细） */
+    .statusbar #pageInfo { min-width: 40px; }
+    .statusbar #stFile { max-width: 96px; }
+    .statusbar .speed-box { gap: 4px; }
+    .statusbar .speed-box label { display: none; }   /* 「每页」靠输入框 + 「30s/页」自解释 */
+    .statusbar .speed-box input { width: 52px; }
+  }
+  .statusbar .item { display: flex; align-items: center; gap: 6px; min-width: 0; }
   .statusbar .item b { color: var(--text); font-weight: 600; }
   .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-weight: 600; font-size: 12px; background: var(--surface-solid); border: 1px solid var(--border); color: var(--text); }
   .chip .pulse { width: 8px; height: 8px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), var(--accent2)); box-shadow: 0 0 10px var(--glow); }
@@ -482,12 +552,27 @@
      遮罩用伪元素做纯视觉与点击面，收起动作由 .app 的 click 委托统一处理。 */
   @media (max-width: 768px) {
     .sidebar {
-      position: fixed; left: 16px; top: 86px; bottom: 86px; z-index: 40;
-      width: min(320px, calc(100vw - 32px)); flex-basis: auto;
+      position: fixed; z-index: 40;
+      left: 8px;
+      top: calc(8px + env(safe-area-inset-top, 0px));
+      bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+      width: min(340px, calc(100vw - 24px)); flex-basis: auto;
+      padding: 0 2px;
+      /* 抽屉整体滚动：四个面板各给 max-height，不再四栏平分挤成 100px 一条 */
+      overflow-y: auto; overflow-x: hidden;
+      overscroll-behavior: contain;
       box-shadow: 0 24px 70px -20px rgba(0,0,0,.55); background: var(--bg);
       transition: left .28s var(--ease), opacity .28s var(--ease);
     }
-    .app.sidebar-collapsed .sidebar { left: -360px; margin-left: 0; opacity: 0; width: min(320px, calc(100vw - 32px)); }
+    .app.sidebar-collapsed .sidebar {
+      left: calc(-1 * (min(340px, calc(100vw - 24px)) + 24px));
+      margin-left: 0; opacity: 0; width: min(340px, calc(100vw - 24px));
+    }
+    .sidebar > .panel { flex: 0 0 auto; }
+    .sidebar > .panel:not(.collapsed) .panel-body { max-height: 30vh; }
+    /* 独占模式仍按原逻辑：被点的那栏铺满抽屉剩余空间 */
+    .sidebar.solo-mode .panel.soloed { flex: 1 1 0; }
+    .sidebar.solo-mode .panel.soloed .panel-body { max-height: none; }
     .app:not(.sidebar-collapsed)::after {
       content: ''; position: fixed; inset: 0; z-index: 35;
       background: rgba(0, 0, 0, .46);
@@ -511,6 +596,21 @@
        所以视觉高度不变、只是手指更容易按住。 */
     .ruler { height: 44px; }
     .search-btn { min-width: 44px; min-height: 44px; }
+    /* 安卓适配（v1.27）：把漏网的可点区域一并抬到 44px —— 实测窄屏下编码 / 字号下拉 37px、
+       摘录面板的复制导出删除 22–25px、翻页速度输入框 31px、朗读语速滑块 16px，
+       都是拇指按不准的尺寸。drop-down 与输入框只加高度，不加宽度，避免撑破单行布局。 */
+    select, input:not([type=file]), .search, .speed-box input,
+    .panel-actions button, .ex-del, .sel-bar button,
+    .modal-foot > button, .modal-head .modal-x, .search-btn {
+      min-height: 44px;
+    }
+    input[type=range] { min-height: 44px; }
+    /* 面板标题栏的操作按钮（复制 / 导出 / 清除）原先只有 22–30px 宽 */
+    .panel-actions button { min-width: 44px; }
+    /* 背景色圆点：视觉圆点跟着放大到 44，命中区域才符合判据（原先 22×22） */
+    .read-bar .swatch { width: 44px; height: 44px; }
+    .list-item { min-height: 46px; }
+    .toc-item { min-height: 44px; }
   }
 
   /* 横屏 / 矮视口紧凑模式：把纵向空间尽量让给正文（PLAN-C §7.1 遗留项「手机横屏正文仅 53px」）。
@@ -540,6 +640,84 @@
     .topbar::-webkit-scrollbar { height: 6px; }
     .topbar::-webkit-scrollbar-thumb { background: var(--glow); border-radius: 6px; }
     .statusbar { padding: 4px 10px; font-size: 10.5px; gap: 4px 10px; }
+  }
+
+  /* ============================================================
+     安卓手机适配（v1.27）
+     目标视口：360×640 / 360×780 / 393×873 / 412×915 / 432×960，横屏 732×412。
+     核心矛盾是纵向空间：360×640 上顶栏 160 + 翻页栏 115 + 状态栏 94 = 369px，
+     正文只剩 139px（3 行）。所以窄屏下三块控件一律「单行 + 横向滑动」，
+     控件一个不删、靠滑动可达，把省下来的高度全给正文（实测 139 → 415px）。
+     ============================================================ */
+  @media (max-width: 768px) {
+    .app {
+      padding: 8px;
+      padding-left: calc(8px + env(safe-area-inset-left, 0px));
+      padding-right: calc(8px + env(safe-area-inset-right, 0px));
+      padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+      gap: 8px;
+    }
+    .body { gap: 8px; }
+    .reader-col { gap: 8px; }
+
+    /* ---- 顶栏：单行横滑。☰ 与「打开文件」排在最前（常驻入口），品牌挪到末尾 ---- */
+    .topbar {
+      flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden;
+      max-height: none; padding: 6px 8px; gap: 8px; row-gap: 0;
+      scrollbar-width: thin; scroll-padding-left: 8px;
+    }
+    .topbar > * { flex: 0 0 auto; }
+    .topbar .brand { order: 99; margin-right: 0; gap: 8px; font-size: 15px; }
+    .topbar .brand small { display: none; }        /* 副标题在手机上纯占位 */
+    .topbar .ctrl { gap: 6px; }
+    .topbar .ctrl label { display: none; }         /* 「编码 / 换行 / 字号 / 主题」标签省掉，值本身可读 */
+    .topbar::-webkit-scrollbar { height: 3px; }
+    .topbar::-webkit-scrollbar-thumb { background: var(--glow); border-radius: 3px; }
+
+    /* ---- 翻页栏：单行横滑，上一页 / 页码 / 下一页恒在最前 ---- */
+    .pagebar {
+      flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden;
+      max-height: none; padding: 6px 8px; gap: 8px; row-gap: 0;
+      font-size: 12.5px;
+    }
+    .pagebar > * { flex: 0 0 auto; }
+    .pagebar::-webkit-scrollbar { height: 3px; }
+    .pagebar::-webkit-scrollbar-thumb { background: var(--glow); border-radius: 3px; }
+    #pageInfo { min-width: 62px; }
+    .speed-box label { display: none; }
+
+    /* ---- 底栏（v1.28 起翻页控件与文件信息同一行）：整条横滑，信息段收紧 ---- */
+    .statusbar {
+      flex-wrap: nowrap; overflow-x: auto; overflow-y: hidden;
+      padding: 4px 8px; font-size: 11.5px; gap: 8px;
+    }
+    .statusbar > * { flex: 0 0 auto; }
+    .statusbar::-webkit-scrollbar { height: 0; }
+    .statusbar > .fileinfo { flex: 0 0 auto; gap: 10px; }   /* 窄屏改为整条横滑，不压缩信息段 */
+    .statusbar .prog-label { display: inline; }             /* 窄屏整条可横滑，把「进度」二字放回来 */
+    .statusbar #stFile { max-width: 42vw; }
+
+    /* ---- 开始页帮助卡片：贴边，网格单列 ---- */
+    .empty { padding: 4px; }
+    .help-card { padding: 16px 14px; margin: 8px 0; }
+    .help-header { gap: 10px; margin-bottom: 12px; padding-bottom: 10px; }
+    .help-icon { width: 40px; height: 40px; font-size: 20px; border-radius: 12px; }
+    .help-section li, .help-section p { font-size: 12.5px; }
+    .help-tip { font-size: 11.5px; }
+
+    /* ---- 简单排版弹窗：贴边 + 底部对齐，底栏按钮铺满 ---- */
+    .modal-mask { padding: 8px; align-items: flex-end; }
+    .modal-card { width: 100%; max-height: calc(100dvh - 16px); }
+    .modal-head { padding: 10px 12px; }
+    .modal-body { padding: 10px 12px; }
+    .modal-foot { padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px)); }
+
+    /* ---- 选中文字工具条 / toast：不得超宽，长章节名换行 ---- */
+    .sel-bar { max-width: calc(100vw - 16px); }
+    .toast {
+      bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+      max-width: calc(100vw - 24px); white-space: normal; text-align: center;
+    }
   }
 
   /* ============ 纯净阅读模式 ============ */
@@ -701,6 +879,46 @@
   body.reading-mode #content .row.spk .tx::before { left: calc(var(--read-pad-x, 10vw) - 15px); }
   body.reading-mode .empty { background: var(--read-bg, var(--surface)); }
   body.reading-mode .viewport::-webkit-scrollbar-thumb { background: var(--read-text, var(--glow)); }
+
+  /* ---- 安卓（v1.27）：纯净阅读控制条 由顶部悬浮药丸 → 底部面板 ----
+     药丸在 360px 下会被内容撑成 352px 高的圆（border-radius:999px），盖掉半屏正文，
+     朗读组（语音下拉 150px + 按钮）还会横向溢出屏幕（实测 -108…468）。
+     改成贴底的圆角面板：组间纵向排列、组内允许换行，最高 52dvh 内部可滚。
+     必须放在本文件 read-bar 基础规则之后 —— 同权重规则靠源码顺序决胜。 */
+  @media (max-width: 768px) {
+    body.reading-mode .read-bar {
+      top: auto; bottom: 0; left: 0; right: 0;
+      transform: none;
+      width: 100%; max-width: none;
+      border-radius: 18px 18px 0 0;
+      border-left: none; border-right: none; border-bottom: none;
+      padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
+      max-height: 52dvh; overflow-y: auto; overflow-x: hidden;
+      flex-direction: column; flex-wrap: nowrap; align-items: stretch; justify-content: flex-start;
+      gap: 8px;
+    }
+    body.reading-mode .read-bar.compact {
+      left: auto; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+      width: auto; max-width: calc(100vw - 16px);
+      border-radius: 14px; padding: 8px 10px;
+      max-height: 60dvh; flex-direction: row; align-items: center;
+    }
+    .read-bar .grp { flex-wrap: wrap; max-width: 100%; row-gap: 6px; }
+    .read-bar .sep { display: none; }
+    .read-bar select, .read-bar input { max-width: 100%; }
+    .read-bar button { flex: 0 0 auto; }
+    .read-bar .swatches { flex-wrap: wrap; }
+  }
+
+  /* ---- 触摸设备的阅读控制条尺寸 ----
+     必须写在 .read-bar 基础规则之后：同权重的 width/height 由源码顺序决胜，
+     基础规则里 .read-bar .swatch 是 22px，写在前面会被它盖回去。 */
+  @media (pointer: coarse) {
+    .read-bar .swatch { width: 44px; height: 44px; }
+    .read-bar .swatch.active { transform: none; }
+    .read-bar button { min-width: 44px; }
+    .read-bar .swatches { gap: 5px; }
+  }
 </style>
 </head>
 <body>
@@ -862,7 +1080,7 @@
               <div class="help-header">
                 <div class="help-icon">📄</div>
                 <div class="help-title">TXT 阅读器</div>
-                <div class="help-version">v1.26</div>
+                <div class="help-version">v1.29</div>
               </div>
 
               <div class="help-section">
@@ -875,6 +1093,7 @@
                 <ul>
                   <li><strong>自动编码识别</strong>：智能检测 GBK / Big5 / UTF-8，也可手动切换。</li>
                   <li><strong>真实显示行分页</strong>：按实际折行后的视觉行计算页码，翻页精准。</li>
+                  <li><strong>阅读进度</strong>：底栏页码右侧实时显示百分比 —— 已读行数取「视口底部可见行」、总行数取视觉行总数，整数向下取整，滚到底为 100%；未载入文件或全文 0 行时显示「—」。</li>
                   <li><strong>翻页末行标记</strong>：每次翻页在上一页最后一行下方画一条下划线（该行落在新页第 2 行），标出上次读到的位置；全局只保留一条，重排 / 换文件时清除。</li>
                   <li><strong>通配符搜索定位</strong>：<code>*</code> 匹配任意长度、<code>?</code> 匹配单字符；支持循环跳转、正文内联高亮、第 X/N 个匹配。</li>
                   <li><strong>简单排版 · 按句分段</strong>：主窗口正文与「✒ 简单排版」弹窗共用同一规则——每句一段、段间空行、连续短对话合并不空行；逗号等非句末标点后的换行自动合并；破折号 —— / 省略号 …… 连排作强制分段。<strong>排版结果框可直接编辑</strong>，手动改过之后自动排版暂停，避免改动被冲掉。</li>
@@ -930,19 +1149,6 @@
           </div>
         </div>
 
-      <div class="pagebar">
-        <button class="btn-icon" id="prevPage" title="上一页">◀ 上一页</button>
-        <span id="pageInfo">1 / 1</span>
-        <button class="btn-icon" id="nextPage" title="下一页">下一页 ▶</button>
-        <button class="btn-icon" id="restoreBtn" title="恢复到上次阅读位置（仅本文件有保存进度时可用）">↺ 恢复进度</button>
-        <button class="btn-icon" id="clearProgressBtn" title="清除所有文件的阅读进度记录">🗑 清除进度</button>
-        <button class="btn-icon" id="autoPlay" title="自动翻页（空格）">▶| 自动翻页 (空格)</button>
-        <span class="speed-box">
-          <label>每页</label>
-          <input id="speedInput" max="90" min="15" step="5" type="number" value="30">
-          <span id="speedVal">30s/页</span>
-        </span>
-      </div>
       </main>
 
       <!-- 简单排版弹窗：按句分段 -->
@@ -970,14 +1176,32 @@
       </div>
     </div>
 
-    <!-- 状态栏 -->
+    <!-- 底栏（v1.28）：原「翻页栏（阅读列内）」与「状态栏（通栏）」合并为一行通栏 ——
+         两行合计约 75px 且左右边界不齐；合并后控件靠左、文件信息靠右，用一条细分隔线区隔。
+         行数 / 字符默认省略显示：值仍由 JS 写入 DOM（元素保留，去掉 hidden 即恢复）。 -->
     <footer class="statusbar">
-      <div class="item">文件：<b id="stFile">—</b></div>
-      <div class="item">检测编码：<span class="chip"><span class="pulse"></span><b id="stDetect">—</b></span></div>
-      <div class="item">当前编码：<b id="stCurrent">—</b></div>
-      <div class="spacer"></div>
-      <div class="item">行数：<b id="stLines">0</b></div>
-      <div class="item">字符：<b id="stChars">0</b></div>
+      <div class="pagebar">
+        <button class="btn-icon" id="prevPage" title="上一页">◀ 上一页</button>
+        <span id="pageInfo">1 / 1</span>
+        <span class="prog-item" id="progItem"><span class="prog-label">进度</span><b id="stProgress">—</b></span>
+        <button class="btn-icon" id="nextPage" title="下一页">下一页 ▶</button>
+        <button class="btn-icon" id="restoreBtn" title="恢复到上次阅读位置（仅本文件有保存进度时可用）">↺ 恢复进度</button>
+        <button class="btn-icon" id="clearProgressBtn" title="清除所有文件的阅读进度记录">🗑 清除进度</button>
+        <button class="btn-icon" id="autoPlay" title="自动翻页（空格）">▶| 自动翻页 (空格)</button>
+        <span class="speed-box">
+          <label>每页</label>
+          <input id="speedInput" max="90" min="15" step="5" type="number" value="30">
+          <span id="speedVal">30s/页</span>
+        </span>
+      </div>
+      <span aria-hidden="true" class="fdivider"></span>
+      <div class="fileinfo">
+        <div class="item">文件：<b id="stFile">—</b></div>
+        <div class="item">检测编码：<span class="chip"><span class="pulse"></span><b id="stDetect">—</b></span></div>
+        <div class="item">当前编码：<b id="stCurrent">—</b></div>
+        <div class="item" hidden>行数：<b id="stLines">0</b></div>
+        <div class="item" hidden>字符：<b id="stChars">0</b></div>
+      </div>
     </footer>
   </div>
 
@@ -1088,6 +1312,8 @@
   const stCurrent = $('stCurrent');
   const stLines   = $('stLines');
   const stChars   = $('stChars');
+  const progItem  = $('progItem');
+  const stProgress = $('stProgress');
 
   // 纯净阅读模式相关 DOM
   const readBar         = $('readBar');
@@ -1113,6 +1339,8 @@
     lineFirstVisualRow: [], // 逻辑行 -> 首个视觉行索引
     computedLines: 0,     // 已构建视觉行的逻辑行数（前缀长度；等于 lines.length 即已补齐）
     totalVisualRows: 0,   // 视觉行总数：分块补齐前为采样估算值，补齐后为精确值
+    rowsPerScreen: 0,     // 视口能容纳的视觉行数（buildPages 缓存，进度计算复用，避免滚动中量布局）
+    rowPartial: 0,        // 视口底部不足一行的余量是否够高（≥1/4 行 = 1），进度里算作一行
     effWidth: 0,          // 本轮重排的正文可用宽度（分块续算必须与首屏用同一个值）
     layoutWidth: 0,       // 本轮重排量取的 viewport.clientWidth（供 applyLayoutMetrics 复用）
     layoutCursor: 0,      // 已消费的原文位置（排版分片游标）
@@ -1679,9 +1907,13 @@
     const n = state.totalVisualRows;   // 分块补齐前是采样估算值，补齐后由 finishFill 重算
     const pages = [0];
     state.pages = pages;
+    // 每屏行数：分页之外的「阅读进度」也用它，缓存下来避免滚动中反复量 viewport
+    const rowsPerScreen = Math.max(3, Math.floor(vh / state.lineHeight)); // 视口能容纳的视觉行数
+    state.rowsPerScreen = rowsPerScreen;
+    // 不足一行的余量够高（≥1/4 行）时算作「还能看到一行」，供阅读进度使用
+    state.rowPartial = (vh - rowsPerScreen * state.lineHeight) >= state.lineHeight * 0.25 ? 1 : 0;
     if (n === 0) return;
     const OVERLAP = 2;                 // 每页底部向下一页保留的行数，保证上下文衔接
-    const rowsPerScreen = Math.max(3, Math.floor(vh / state.lineHeight)); // 视口能容纳的视觉行数
     const stepRows = rowsPerScreen - OVERLAP; // 每页推进的视觉行数（重叠 2 行）
     if (stepRows <= 0) { state.pages = [0]; return; }
     const lastStart = Math.max(0, n - rowsPerScreen); // 末页起点：从底部倒推一屏
@@ -2900,6 +3132,63 @@
   }
   function updatePageInfo() {
     pageInfo.textContent = currentPage() + ' / ' + totalPages();
+    updateProgress();          // 页码与进度同源：都在每次重绘/分页重建/滚动帧里一起刷新
+  }
+
+  /* ---------- 阅读进度百分比（底栏，v1.29） ----------
+     计算依据 —— 视觉行（与分页、页码同一套口径，单位一致才可比）：
+       · 总行数 = state.totalVisualRows —— 按实际折行后的视觉行计数；
+         分片补齐完成前它是采样估算值，finishFill 转精确后会随之重算一次。
+       · 已读行数 = 当前视口**底部可见那一行**的序号（1 基）= 顶部可见行 + 一屏行数 - 1。
+         取底部而不是顶部：整篇一屏装得下时直接算 100%，正常滚到底也自然到 100%，
+         不会出现「已经看到末行却显示 99%」。
+     取整方式 —— 向下取整到整数百分比（Math.floor），只有已读行 ≥ 总行数才给 100%，
+       并对结果做 0–100 钳制；用整数是为了避免长文里小数值高频抖动。
+     更新时机 ——
+       · 滚动：onScroll 用 requestAnimationFrame 节流后调 render()，render 末尾调
+         updatePageInfo() → 本函数，因此拖动滚动条、滚轮、触摸滑动都是每帧最多一次，
+         平滑翻页动画期间也会跟着变；
+       · 分页重建 / 重排 / 打开文件 / 清空文件 / 切换纯净阅读：都会走 updatePageInfo；
+       · 分片补齐完成（finishFill → buildPages → updatePageInfo）：估算值换精确值。
+     边界 —— 未载入文件（state.bytes 为空）或总行数为 0 → 显示「—」，不做除法，也不闪 0%。 */
+  function visibleRowRange() {
+    const total = state.totalVisualRows || 0;
+    if (!total) return null;
+    const lh = state.lineHeight || 1;
+    const vh = viewport.clientHeight || 1;
+    // 每屏行数优先用分页时缓存的值：滚动中读 viewport.clientHeight 会逼出一次同步布局
+    const full = Math.max(1, state.rowsPerScreen || Math.floor(vh / lh));
+    // 视口高度通常不是行高整数倍，余下那截只要够高（≥1/4 行）就算作「看得到的一行」，
+    // 与「翻页末行标记」同一口径 —— 否则滚到底时那一行明明显示着，却永远差 1 行到不了 100%。
+    const rows = Math.max(1, full + (state.rowPartial || 0));
+    const top = Math.max(0, Math.min(total - 1, Math.floor(viewport.scrollTop / lh)));
+    let bottom = Math.min(total - 1, top + rows - 1);
+    // 真正滚到末尾（允许 1px 取整误差）直接按末行算，避免最后几像素卡在 99%
+    if (viewport.scrollTop >= viewport.scrollHeight - vh - 1) bottom = total - 1;
+    return { top, bottom, total };
+  }
+  let lastProgKey = null;     // 进度只在数值变化时写 DOM（滚动帧每秒 60 次，避免无谓的重排与 Intl 调用）
+  function updateProgress() {
+    if (!stProgress) return;
+    const r = state.bytes ? visibleRowRange() : null;
+    if (!r) {
+      if (lastProgKey === 'none') return;
+      lastProgKey = 'none';
+      stProgress.textContent = '—';
+      if (progItem) progItem.title = state.bytes ? '全文行数为 0，无法计算进度' : '尚未载入文件';
+      return;
+    }
+    const read = r.bottom + 1;                               // 已读行数（1 基）
+    let pct = read >= r.total ? 100 : Math.floor(read * 100 / r.total);
+    pct = Math.max(0, Math.min(100, pct));
+    const key = pct + '/' + read + '/' + r.total;
+    if (key === lastProgKey) return;
+    lastProgKey = key;
+    stProgress.textContent = pct + '%';
+    if (progItem) {
+      progItem.title = '已读 ' + read.toLocaleString() + ' / ' + r.total.toLocaleString()
+        + ' 行（视觉行，按实际折行计算；整数向下取整）';
+    }
   }
   function goToPage(p, keepEndMark) {
     const pages = state.pages;
@@ -3841,13 +4130,22 @@
   }
 
   sideToggle.addEventListener('click', () => app.classList.toggle('sidebar-collapsed'));
+  // 窄屏默认收起抽屉（安卓适配 v1.27）：手机上侧栏是覆盖层，展开时正文整块被盖住，
+  // 首屏应直接看到正文。宽屏保持常驻栏，不受影响。
+  if (window.innerWidth <= 768) app.classList.add('sidebar-collapsed');
   // 窄屏抽屉（PLAN-C 要点 4）：点侧栏以外任意处收起侧栏 —— 遮罩就是同一块点击面。
   // 宽屏不介入（宽屏侧栏是常驻栏，点正文不该把它关掉）。
   app.addEventListener('click', (e) => {
     if (window.innerWidth > 768) return;
     if (app.classList.contains('sidebar-collapsed')) return;
     if (!e.target || !e.target.closest) return;
-    if (e.target.closest('.sidebar') || e.target.closest('#sideToggle')) return;
+    if (e.target.closest('#sideToggle')) return;
+    // 抽屉里选中文件 / 章节 / 搜索结果后自动收起，让出正文；面板折叠、独占、摘录操作不收起
+    if (e.target.closest('#fileList .list-item, #tocList .list-item, #searchList .list-item')) {
+      app.classList.add('sidebar-collapsed');
+      return;
+    }
+    if (e.target.closest('.sidebar')) return;
     app.classList.add('sidebar-collapsed');
   });
   document.querySelectorAll('.panel-head .chev').forEach(btn => {
